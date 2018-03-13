@@ -20,6 +20,7 @@ weather_df = weather_df.asfreq('min').interpolate()
 rooms_df = pd.read_excel('input/Rooms.xlsx', sheet_name=None).values()
 [project, rooms_df, walls_df, windows_df, schedule, material_df] = [df.set_index(df.columns[0]) for df in rooms_df]
 project = project.drop(['备注'], axis=1).to_dict()['values']
+schedule = schedule.asfreq('min').interpolate()
 
 
 # 处理气象参数
@@ -182,28 +183,23 @@ class Walls(Face):
 
 # 墙
 walls = [Walls(walls_df.loc[i]) for i in list(walls_df.index)]
-print(walls)
 windows = [Windows(windows_df.loc[i]) for i in list(windows_df.index)]
-print(windows)
 
 
 # 房间
-class Rooms():
-    def __init__(self):
-        pass
+class Rooms(object):
+    def __init__(self, room_df):
+        self.room_id = room_df.name
+        self.volume = float(room_df.volume)
+        self.CPF = float(room_df.CPF)
+        self.n_air = float(room_df.n_air)
+        # self.HVAC_schedule = schedule[str(int(room_df.HVAC_schedule))]
 
 
-
-
-
-
-
-
-
-
-
-
-
+rooms = [Rooms(rooms_df.loc[i]) for i in list(rooms_df.index)]
+print(rooms)
+print(str(int(rooms_df.loc[1].HVAC_schedule)))
+print(schedule.at[:,str(int(rooms_df.loc[1].HVAC_schedule))])
 
 
 
