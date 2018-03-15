@@ -1,19 +1,45 @@
 # -*- coding: utf-8 -*-
 import numpy as np
 import itertools
+
+w = np.zeros((10,10))
+
+a = [[[1,1],[1,0]],
+     [[1,0],[1,1]],
+     [[1,1],[1,1]],
+     [[1,1],[1,0],[1,0]],
+     [[1,0],[1,1],[1,0]],
+     [[1,1,1],[0,0,1]],
+     [[1,1],[1,0]],
+     [[1,1],[1,1]],
+     [[1,1,1,1]],
+     [[1,0,0],[1,1,1]],
+     [[0,1,0],[1,1,1],[0,1,0]],
+     [[1,1,1]],
+     [[1,0,0],[1,1,1]],
+     [[1,1],[1,1]],
+     [[1],[1],[1]],
+     [[1,1],[1,1]],
+     [[0,1,0],[1,1,1],[0,1,0]],
+     [[1,0],[1,1]],
+     [[0,1,0],[1,1,1]],
+     [[1,0],[1,1]],
+     [[0,1,0],[1,1,1],[0,1,0]],
+     [[0,1],[1,1],[0,1]],
+     [[1,1],[1,0],[1,0]],
+     [[1,1,1],[1,0,0]],
+     [[1,0,0],[1,1,1]],
+     [[0,1],[0,1],[1,1]]]
+# print([np.multiply(a[i], i+1) for i in range(len(a))])
+for i in range(len(a)):
+	print(np.multiply(a[i], i+1))
+a = [np.multiply(a[i], i+1) for i in range(len(a))]
 '''
-w = np.zeros((4,4))
-a = np.zeros((2,2)) + 1
-b = np.zeros((3,2))
-b[0,1] = b[1, 1] =b[2,0]=b[2,1]=2
-c = np.zeros((2,3))
-c[0,0]=c[1,0]=c[1,1]=c[1,2]=3
-d = np.zeros((4,1)) + 4
-print(w)
-print(a)
-print(b)
-print(c)
-print(d)
+b = [[[1,1],[1,1]], [[0,1,0],[1,1,1],[0,1,0]],[[0,1],[0,1],[1,1]],[[1,0,0],[1,1,1]],[[1],[1],[1],[1]],[[1],[1]],[[1,1]]]
+for i in range(len(b)):
+	print(np.multiply(b[i], i+1))
+b = ([np.multiply(b[i], i+1) for i in range(len(b))])
+'''
 
 def i_t(w, i, j, a):
     found = 0
@@ -40,24 +66,27 @@ def i_w(w, a):
                 return w, True
     return w, False
 
-abcd = [a,b,c,d]
-index = list(itertools.permutations([0, 1, 2, 3],4))
+# abcd = [a,b,c,d,e,f,g]
+# index = list(itertools.permutations(range(7),7))
 
-for i in range(len(index)):
-    w = np.zeros((4, 4))
-    found = 1
-    for j in range(4):
-        if found:
-            w, found = i_w(w, abcd[index[i][j]])
-        else:
-            break
-    if found:
-        print(index[i])
-        print(w)
-'''
+for i in range(200000):
+	index = np.random.permutation(24)
+	# print(index)
+	w = np.zeros((10,10))
+	found = 1
+	for j in range(24):
+	    if found:
+	        w, found = i_w(w, a[index[j]])
+	        # print(w)
+	    else:
+	        break
+	if found:
+	    print(index)
+	    print(np.array(w))
 
-index = list(itertools.permutations(range(12),12))
-print(len(index))
+
+# index = list(itertools.permutations(range(8),8))
+# print(len(index))
 
 
 
