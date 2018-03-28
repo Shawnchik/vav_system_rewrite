@@ -206,6 +206,7 @@ class Rooms(object):
 		self.equipment_ws = float(room_df.equipment_ws)
 		self.equipment_wl = float(room_df.equipment_wl)
 		self.equipment_schedule = {0: schedule[0], 1: schedule[1]}[room_df.equipment_schedule].values
+		self.mode = 0
 
 		self.human_s = 0
 		self.human_l = 0
@@ -219,6 +220,18 @@ class Rooms(object):
 
 		self.equipment_kc = 0.4
 		self.equipment_kr = 1 - self.equipment_kc
+
+		self.co2_p = 400
+		self.co2_dp = 0
+
+		# 风管接口
+		self.g = 0
+		self.g_fresh = 0
+		self.duct = 0
+		self.gmax = 0
+		self.gmin = 0
+		self.g_set = 0
+		self.load = 0
 
 		# 定义变量
 		self.load_sum_s = 0
@@ -238,6 +251,9 @@ class Rooms(object):
 		self.BRCX = 0
 		self.T_mrt = 0
 		self.capacity = 0
+
+		self.e = 0
+		self.es = 0
 
 		# 房间构成
 		self.windows = [x for x in windows if x.room_id == self.room_id]
@@ -263,6 +279,10 @@ class Rooms(object):
 
 		# 换气量
 		self.Go = project['rho_air'] * self.n_air * self.volume / 3600
+
+		# 设定条件
+		self.indoor_temp_set_point_summer = 26
+		self.indoor_temp_set_point_winter = 20
 
 		# 初始条件
 		self.indoor_temp = 26
@@ -339,15 +359,25 @@ class Rooms(object):
 		self.BRMX = self.RMDTX + self.Go
 		self.BRCX = (self.RMDTX * self.indoor_humidity + self.Go * outdoor_humidity[step] + self.HLG / project['r'])
 
-	# 物理模型
-	def indoor_temp_cal(self, step):
-		# 空调关
-		self.indoor_temp = self.BRC / self.BRM
-		self.indoor_humidity = self.BRCX / self.BRMX
-		self.load = 0
+	# CO2浓度模型
+	def room_co2(self, step):
+		# fresh air
+		g_sum = sum([room.g for room in rooms])
+		g_fresh_sum = duct_system.g_supply_air - duct_system.g_mix_air
+		if g_sum:
+			self.g_fresh = self.g * g_fresh_sum / g_sum
+		else:
+			self.g_fresh = 0
+		# co2
+		self.co2_dp = (0.02 * self.human_n * self.human_schedule[step] * project['dt'] / 3600 - (self.co2_p - 400)
+		               * self.g_fresh * project['dt'] / 3600) / self.volume
+		self.co2_p += self.co2_dp
 
-		# 负荷计算
-		if self.HVAC_schedule[step]:
+	# 室内温度计算模型
+	# 改
+	def indoor_temp_cal(self, step):
+		if self.mode:
+			# 空调开
 			temp0 = self.BRC / self.BRM
 			if temp0 <= 20:
 				self.load = (self.BRC - self.BRM * 20) / 1000
@@ -360,14 +390,20 @@ class Rooms(object):
 			else:
 				self.load = 0
 				self.indoor_temp = temp0
+		else:
+			# 空调关
+			self.indoor_temp = self.BRC / self.BRM
+			self.indoor_humidity = self.BRCX / self.BRMX
+			self.load = 0
+
 
 	# 后处理
 	def after_cal(self, step):
 		temp0 = self.BRC / self.BRM
 		if temp0 <= 20:
-			self.indoor_temp = (self.BRC - (self.capacity) * 1000) / self.BRM
+			self.indoor_temp = (self.BRC + self.capacity * 1000) / self.BRM
 		elif temp0 >= 26:
-			self.indoor_temp = (self.BRC - (self.capacity) * 1000) / self.BRM
+			self.indoor_temp = (self.BRC - self.capacity * 1000) / self.BRM
 
 		self.T_mrt = (project['kc'] * self.ANF * self.indoor_temp + self.AFT) / self.SDT
 		for x in self.windows:
@@ -392,11 +428,12 @@ class Damper(object):
 		self.l = 1  # 开度(百分比，0-1，默认1，全开)
 		self.zeta = 0  # ζ，局部阻力系数
 		self.s = 0  # p = SG2 的 S
-		self.theta_run(self.theta)  # 初始化l, ζ，S
+		self.theta_run()  # 初始化l, ζ，S
 
-	def theta_run(self, theta):
+	def theta_run(self, theta=False):
 		# θ确定的情况下，算l, ζ，S
-		self.theta = theta
+		if theta:
+			self.theta = theta
 		self.l = 1 - np.sin(np.deg2rad(self.theta))
 		self.zeta = ((1 - self.l) * (1.5 - self.l) / self.l ** 2)
 		self.s = (8 * self.rho * self.zeta) / (np.pi ** 2 * self.d ** 4)
@@ -436,6 +473,7 @@ class Duct(object):
 	# 输出 管径，流速，S，压力损失
 	def __init__(self, g, l, zeta, d=0., a=0., b=0., v=4., damper=None, show=False):
 		self.g = g  # m3/h  # 流量
+		self.g0 = g  # 定格流量
 		self.l = l  # m  # 管长
 		self.zeta = zeta  # 局部阻力系数ζ
 		self.d = d  # 直径(当量直径 d = 2ab/(a+b))
@@ -458,7 +496,7 @@ class Duct(object):
 		# 圆管
 		if self.d == 0:  # 不指定管径
 			self.d_target = (self.A / np.pi) ** 0.5 * 2  # 目标直径
-			print(self.d_target)
+			# print(self.d_target)
 			dis = [abs(nd - self.d_target) for nd in nominal_diameter]  # 残差
 			self.d = nominal_diameter[dis.index(min(dis))]  # 选定管径、
 
@@ -550,6 +588,8 @@ class Fan(object):
 		self.g = 0
 		self.p = 0
 		self.inv = 50
+		self.e = 0
+		self.es = 0
 
 
 		# 对不同频率下的风量和压力拟合，求出曲线的系数
@@ -666,7 +706,7 @@ class DuctSystem(object):
 			raise TypeError
 		self.fan_r = fan_r
 		self.dp_ahu = dp_ahu
-
+		self.mode = 0
 		self.g_return_air = 0
 		self.g_supply_air = 0
 		self.g_mix_air = 0
@@ -711,24 +751,24 @@ class DuctSystem(object):
 
 
 # HVAC设备构成
-vav1 = Damper(0.35)
-vav2 = Damper(0.3)
-vav3 = Damper(0.4)
-fresh_air_damper = Damper(0.6)
-exhaust_air_damper = Damper(0.6)
-mix_air_damper = Damper(0.6)
+vav1 = Damper(0.45)
+vav2 = Damper(0.4)
+vav3 = Damper(0.45)
+fresh_air_damper = Damper(0.7)
+exhaust_air_damper = Damper(0.7)
+mix_air_damper = Damper(0.7)
 
 # 送风管段
-duct_1 = Duct(1547, 10, 0.05+0.1+0.23+0.4+0.9+1.2+0.23, damper=vav1)
-duct_2 = Duct(1140, 2.5, 0.3+0.1+0.4+0.23+1.2+0.9, damper=vav2)
-duct_12 = Duct(1547 + 1140, 7.5, 0.05+0.1, a=0.5)
-duct_3 = Duct(1872, 2.5, 0.3+0.1+0.4+0.23+1.2+0.9, damper=vav3)
-duct_123 = Duct(1547 + 1140 + 1872, 4.3, 3.6+0.23, a=0.5)
+duct_1 = Duct(2062, 10, 0.05+0.1+0.23+0.4+0.9+1.2+0.23, damper=vav1)
+duct_2 = Duct(1819, 2.5, 0.3+0.1+0.4+0.23+1.2+0.9, damper=vav2)
+duct_12 = Duct(2062 + 1819, 7.5, 0.05+0.1, a=0.6)
+duct_3 = Duct(2062, 2.5, 0.3+0.1+0.4+0.23+1.2+0.9, damper=vav3)
+duct_123 = Duct(5427, 4.3, 3.6+0.23, a=0.6)
 # 回风管段
-duct_return_air = Duct(4342, 1.75, 0.5+0.24, a=0.6)
-duct_exhaust_air = Duct(4342, 0.95, 3.7+0.9+0.4+0.05, damper=exhaust_air_damper, a=0.6)
-duct_fresh_air = Duct(4342, 0.78, 1.4+0.1+0.4, damper=fresh_air_damper, a=0.6)
-duct_mix_air = Duct(4342, 2.2, 0.3+0.4+1.5, damper=mix_air_damper, a=0.6)
+duct_return_air = Duct(5427, 1.75, 0.5+0.24, a=0.7)
+duct_exhaust_air = Duct(5427, 0.95, 3.7+0.9+0.4+0.05, damper=exhaust_air_damper, a=0.7)
+duct_fresh_air = Duct(5427, 0.78, 1.4+0.1+0.4, damper=fresh_air_damper, a=0.7)
+duct_mix_air = Duct(5427, 2.2, 0.3+0.4+1.5, damper=mix_air_damper, a=0.7)
 
 g = [0, 200, 400, 600, 800, 1000, 1200, 1400, 1600, 1800]
 p = [[443, 383, 348, 305, 277, 249, 216, 172, 112, 30]]
@@ -740,11 +780,11 @@ p.append([300, 239, 194, 153, 110, 55])
 p.append([260, 200, 152, 107, 52])
 p.append([179, 129, 79, 24])
 # 送回风机
-g1 = list(map(lambda x: x * 4342 / 1200, g))
-p1 = [[x * 35 / 216 for x in pi] for pi in p]
+g1 = list(map(lambda x: x * 5427 / 1200, g))
+p1 = [[x * 80 / 216 for x in pi] for pi in p]
 f1 = Fan(g1, p1)  # 回风机
-g2 = list(map(lambda x: x * 4342 / 1200, g))
-p2 = [[x * 350 / 216 for x in pi] for pi in p]
+g2 = list(map(lambda x: x * 5427 / 1200, g))
+p2 = [[x * 320 / 216 for x in pi] for pi in p]
 f2 = Fan(g2, p2)  # 送风机
 # f1.plot()
 
@@ -753,15 +793,7 @@ duct_supply_air = Serial(duct_123, Parallel(duct_3, Serial(duct_12, Parallel(duc
 
 
 # 整合
-def all_balanced(inv_f_r, inv_f_s, v1, v2, v3, ve, vm, vf):
-	f1.inv = inv_f_r
-	f2.inv = inv_f_s
-	vav1.theta_run(v1)
-	vav2.theta_run(v2)
-	vav3.theta_run(v3)
-	exhaust_air_damper.theta_run(ve)
-	mix_air_damper.theta_run(vm)
-	fresh_air_damper.theta_run(vf)
+def all_balanced():
 	duct_1.s_cal()
 	duct_2.s_cal()
 	duct_3.s_cal()
@@ -777,77 +809,171 @@ def all_balanced(inv_f_r, inv_f_s, v1, v2, v3, ve, vm, vf):
 
 # 风管系统
 duct_system = DuctSystem(duct_supply_air, duct_return_air, duct_exhaust_air, duct_fresh_air, duct_mix_air, f2, f1)
-#all_balanced(50, 50, 0, 0, 0, 75, 0, 70)
-#all_balanced(11, 15, 0, 0, 0, 0, 88, 0)
 
-inv_f = 50
-inv_s = 50
-v1 = 0
-v2 = 0
-v3 = 0
-ve = 35
-vm = 10
-vf = 35
+
+# 风管和房间连接
+def contract_room_duct(room, duct):
+	room.duct = duct
+	room.gmax = duct.g0
+	room.gmin = duct.g0 / 10
+
+contract_room_duct(rooms[0], duct_1)
+contract_room_duct(rooms[1], duct_2)
+contract_room_duct(rooms[2], duct_3)
 
 
 # pid control
 # init e0,es, in ct0 ta0, out ct1
 def pid_control(target, set_point, control0, p, i, d, e0, es, control_max=1, control_min=0, tf=1):
 	e = target - set_point
-	'''
 	de = e - e0
 	if de * e <= 0:
 		de = 0
-	'''
 	es += e
-	# control = max(min(control0 + tf * (e * p + es * i + de * d), control_max), control_min)
-	# return control, e, es
-	control = max(min(control0 - tf * (e * p + es * i), control_max), control_min)
-	return control, e
+	control = max(min(control0 - tf * (e * p + es * i + de * d), control_max), control_min)
+	return control, e, es
+	# control = max(min(control0 - tf * (e * p + es * i), control_max), control_min)
+	# return control, e
 
+
+def deltatemp2flow(room, season):
+	# deltatemp
+	if season == 'summer':
+		deltatemp = room.indoor_temp - room.indoor_temp_set_point_summer
+	elif season == 'winter':
+		deltatemp = room.indoor_temp - room.indoor_temp_set_point_winter
+	else:
+		deltatemp = 0
+
+	# 2flow
+	if deltatemp < -1:
+		room.g_set = room.gmin
+	elif deltatemp > 1:
+		room.g_set = room.gmax
+	else:
+		room.g_set = room.gmin + (deltatemp + 1) * (room.gmax - room.gmin) / 2
+
+
+def room_control(room, step, season, method='flow'):
+	# mode / schedule
+	if room.HVAC_schedule[step]:
+		if ((room.indoor_temp > 21) & (season == 'winter')) or ((room.indoor_temp < 25) & (season == 'summer')):
+			room.mode = 0
+		else:
+			room.mode = 1
+	else:
+		room.mode = 0
+
+	if room.mode:
+		# target / set_point / control0
+		if method == 'flow':
+			deltatemp2flow(room, season)
+			target = room.duct.g
+			set_point = room.g_set
+			control0 = room.duct.damper.theta
+		elif method == 'pressure':
+			target = room.indoor_temp
+			if season == 'summer':
+				set_point = room.indoor_temp_set_point_summer
+			elif season == 'winter':
+				set_point = room.indoor_temp_set_point_winter
+			else:
+				set_point = 0
+			control0 = room.duct.damper.theta
+		else:
+			target = 0
+			set_point = 0
+			control0 = 0
+
+		# damper control by pid
+		room.duct.damper.theta, room.e, room.es = pid_control(target, set_point, control0, 0.02, 0, 0, room.e, room.es, control_max=70, control_min=0)
+		room.duct.damper.theta_run()
+
+
+def duct_system_control(system, method='flow'):
+	# system_mode
+	system.mode = sum([room.mode for room in rooms])
+
+	if system.mode:
+		# fan_s
+		if method == 'flow':
+			target_s = system.duct_supply_air.g
+			target_r = system.duct_return_air.g
+			set_point_s = sum([room.g_set for room in rooms])
+			set_point_r = set_point_s + 20
+			control0_s = system.fan_s.inv
+			control0_r = system.fan_r.inv
+		elif method == 'pressure':
+			target_s = rooms[0].duct.p
+			set_point_s = 30
+			control0_s = system.fan_s.inv
+			# r
+		else:
+			target_s = 0
+			target_r = 0
+			set_point_s = 0
+			set_point_r = 0
+			control0_s = 0
+			control0_r = 0
+
+		# fan_s control by pid
+		system.fan_s.inv, system.fan_s.e, system.fan_s.es = pid_control(target_s, set_point_s, control0_s, 0.01, 0, 0, system.fan_s.e, system.fan_s.es, control_max=50, control_min=15)
+
+		# fan_r control by pid
+		system.fan_r.inv, system.fan_r.e, system.fan_r.es = pid_control(target_r, set_point_r, control0_r, 0.01, 0, 0, system.fan_r.e, system.fan_r.es, control_max=50, control_min=15)
+
+		# ve, vm, vf 调节, theta_run
 
 # 设定开始和结束的时间
 start = pd.Timestamp('2001/08/01')
 end = pd.Timestamp('2001/08/02')
+output_time = pd.date_range(start, end, freq='min').values
 
 output = []
-output1 = []
-output2 = []
-
-# pid 初始化
-v1_e = 0
-v2_e = 0
-v3_e = 0
-inv_s_e = 0
-inv_f_e = 0
 
 stepdelta = int((start - pd.Timestamp('2001/01/01')).view('int64') / project['dt'] / 10e8)
 for cal_step in range(int((end - start).view('int64') / project['dt'] / 10e8)):
+	# season
+	month = str(output_time[cal_step])[5:7]
+	if month in ['05','06','07','08','09','10']:
+		season = 'summer'
+	else:
+		season = 'winter'
+
+
+	# 打印进度
 	if cal_step % 1000 == 0:
 		print(cal_step)
+
+	# 从range到schedule
 	cal_step += stepdelta
-	_ = [room.BR(cal_step) for room in rooms]
-	__ = [room.indoor_temp_cal(cal_step) for room in rooms]
 
-	v1, v1_e = pid_control(duct_1.g, rooms[0].load/11/1.005/1.2*3600, v1, 0.002, 0.01, 0, v1_e, 0, control_max=70, control_min=0, tf=-1)
-	v2, v2_e = pid_control(duct_2.g, rooms[1].load/11/1.005/1.2*3600, v2, 0.002, 0.01, 0, v2_e, 0, control_max=70, control_min=0, tf=-1)
-	v3, v3_e = pid_control(duct_3.g, rooms[2].load/11/1.005/1.2*3600, v3, 0.002, 0.01, 0, v3_e, 0, control_max=70, control_min=0, tf=-1)
-	inv_s, inv_s_e = pid_control(duct_supply_air.g, sum([room.load for room in rooms])/11/1.005/1.2*3600, inv_s, 0.001, 0.002, 0, inv_s_e, 0, control_max=50,
-	                             control_min=20)
-	inv_f, inv_f_e = pid_control(duct_return_air.g, sum([room.load for room in rooms])/11/1.005/1.2*3600 - 20, inv_f, 0.001, 0.002, 0, inv_f_e, 0, control_max=50,
-	                             control_min=20)
+	# load
+	for room in rooms:
+		room.BR(cal_step)
+		room.room_co2(cal_step)
 
-	all_balanced(inv_f, inv_s, v1, v2, v3, ve, vm, vf)
+	# control
+	for room in rooms:
+		deltatemp2flow(room, season)
+		room_control(room, cal_step, season)
+		duct_system_control(duct_system)
 
+	# hvac
+	all_balanced()
+
+	# after
 	rooms[0].capacity = duct_1.g * 11 * 1.005 * 1.2 / 3600
 	rooms[1].capacity = duct_2.g * 11 * 1.005 * 1.2 / 3600
 	rooms[2].capacity = duct_3.g * 11 * 1.005 * 1.2 / 3600
 
 	output.extend([room.indoor_temp for room in rooms])
 	output.extend([room.load for room in rooms])
-	output.extend([v1, v2, v3, inv_f, inv_s])
+	output.extend([vav1.theta, vav2.theta, vav3.theta, f1.inv, f2.inv])
 
-	___ = [room.after_cal(cal_step) for room in rooms]
+	for room in rooms:
+		room.indoor_temp_cal(cal_step)
+		room.after_cal(cal_step)
 
 output = np.array(output).reshape((-1, 11))
 
