@@ -398,12 +398,18 @@ class Rooms(object):
 
 
 	# 后处理
-	def after_cal(self, step):
-		temp0 = self.BRC / self.BRM
-		if temp0 <= 20:
-			self.indoor_temp = (self.BRC + self.capacity * 1000) / self.BRM
-		elif temp0 >= 26:
-			self.indoor_temp = (self.BRC - self.capacity * 1000) / self.BRM
+	def after_cal(self, step, season):
+		if self.mode:
+			if season == 'winter':
+				self.indoor_temp = (self.BRC + self.capacity * 1000) / self.BRM
+			elif season == 'summer':
+				self.indoor_temp = (self.BRC - self.capacity * 1000) / self.BRM
+			else:
+				pass
+		else:
+			self.indoor_temp = self.BRC / self.BRM
+			self.indoor_humidity = self.BRCX / self.BRMX
+			self.load = 0
 
 		self.T_mrt = (project['kc'] * self.ANF * self.indoor_temp + self.AFT) / self.SDT
 		for x in self.windows:
@@ -886,7 +892,7 @@ def room_control(room, step, season, method='flow'):
 			control0 = 0
 
 		# damper control by pid
-		room.duct.damper.theta, room.e, room.es = pid_control(target, set_point, control0, 0.02, 0, 0, room.e, room.es, control_max=70, control_min=0)
+		room.duct.damper.theta, room.e, room.es = pid_control(target, set_point, control0, 0.002, 0, 0, room.e, room.es, control_max=70, control_min=0)
 		room.duct.damper.theta_run()
 
 
@@ -917,16 +923,16 @@ def duct_system_control(system, method='flow'):
 			control0_r = 0
 
 		# fan_s control by pid
-		system.fan_s.inv, system.fan_s.e, system.fan_s.es = pid_control(target_s, set_point_s, control0_s, 0.01, 0, 0, system.fan_s.e, system.fan_s.es, control_max=50, control_min=15)
+		system.fan_s.inv, system.fan_s.e, system.fan_s.es = pid_control(target_s, set_point_s, control0_s, 0.001, 0, 0, system.fan_s.e, system.fan_s.es, control_max=50, control_min=15)
 
 		# fan_r control by pid
-		system.fan_r.inv, system.fan_r.e, system.fan_r.es = pid_control(target_r, set_point_r, control0_r, 0.01, 0, 0, system.fan_r.e, system.fan_r.es, control_max=50, control_min=15)
+		system.fan_r.inv, system.fan_r.e, system.fan_r.es = pid_control(target_r, set_point_r, control0_r, 0.001, 0, 0, system.fan_r.e, system.fan_r.es, control_max=50, control_min=15)
 
 		# ve, vm, vf 调节, theta_run
 
 # 设定开始和结束的时间
-start = pd.Timestamp('2001/08/01')
-end = pd.Timestamp('2001/08/02')
+start = pd.Timestamp('2001/09/01')
+end = pd.Timestamp('2001/09/02')
 output_time = pd.date_range(start, end, freq='min').values
 
 output = []
@@ -957,12 +963,14 @@ for cal_step in range(int((end - start).view('int64') / project['dt'] / 10e8)):
 	for room in rooms:
 		deltatemp2flow(room, season)
 		room_control(room, cal_step, season)
-		duct_system_control(duct_system)
+
+	duct_system_control(duct_system)
 
 	# hvac
 	all_balanced()
 
 	# after
+	# 重写
 	rooms[0].capacity = duct_1.g * 11 * 1.005 * 1.2 / 3600
 	rooms[1].capacity = duct_2.g * 11 * 1.005 * 1.2 / 3600
 	rooms[2].capacity = duct_3.g * 11 * 1.005 * 1.2 / 3600
@@ -972,8 +980,8 @@ for cal_step in range(int((end - start).view('int64') / project['dt'] / 10e8)):
 	output.extend([vav1.theta, vav2.theta, vav3.theta, f1.inv, f2.inv])
 
 	for room in rooms:
-		room.indoor_temp_cal(cal_step)
-		room.after_cal(cal_step)
+		# room.indoor_temp_cal(cal_step)
+		room.after_cal(cal_step, season)
 
 output = np.array(output).reshape((-1, 11))
 
