@@ -362,16 +362,20 @@ class Rooms(object):
 	# CO2浓度模型
 	def room_co2(self, step):
 		# fresh air
-		g_sum = sum([room.g for room in rooms])
+		g_sum = sum([room.duct.g for room in rooms])
+		#print(step)
+		#print(g_sum)
 		g_fresh_sum = duct_system.g_supply_air - duct_system.g_mix_air
 		if g_sum:
-			self.g_fresh = self.g * g_fresh_sum / g_sum
+			self.g_fresh = self.duct.g * g_fresh_sum / g_sum
 		else:
 			self.g_fresh = 0
+		#print(self.g_fresh)
 		# co2
 		self.co2_dp = (0.02 * self.human_n * self.human_schedule[step] * project['dt'] / 3600 - (self.co2_p - 400)
-		               * self.g_fresh * project['dt'] / 3600) / self.volume
-		self.co2_p += self.co2_dp
+		               * 1e-6 * self.g_fresh * project['dt'] / 3600) / self.volume
+		#print(self.co2_dp)
+		self.co2_p += self.co2_dp * 1e6
 
 	# 室内温度计算模型
 	# 改
@@ -438,6 +442,9 @@ class Damper(object):
 		self.zeta = 0  # ζ，局部阻力系数
 		self.s = 0  # p = SG2 的 S
 		self.theta_run()  # 初始化l, ζ，S
+
+		self.e = 0
+		self.es = 0
 
 	def theta_run(self, theta=False):
 		# θ确定的情况下，算l, ζ，S
@@ -789,7 +796,7 @@ p.append([260, 200, 152, 107, 52])
 p.append([179, 129, 79, 24])
 # 送回风机
 g1 = list(map(lambda x: x * 5427 / 1200, g))
-p1 = [[x * 80 / 216 for x in pi] for pi in p]
+p1 = [[x * 35 / 216 for x in pi] for pi in p]
 f1 = Fan(g1, p1)  # 回风机
 g2 = list(map(lambda x: x * 5427 / 1200, g))
 p2 = [[x * 320 / 216 for x in pi] for pi in p]
@@ -895,11 +902,11 @@ def room_control(room, step, season, method='flow'):
 			control0 = 0
 
 		# damper control by pid
-		room.duct.damper.theta, room.e, room.es = pid_control(target, set_point, control0, 0.002, 0, 0, room.e, room.es, control_max=70, control_min=0, tf=-1)
+		room.duct.damper.theta, room.e, room.es = pid_control(target, set_point, control0, 0.01, 0.00005, 0, room.e, room.es, control_max=70, control_min=0, tf=-1)
 		room.duct.damper.theta_run()
 
 
-def duct_system_control(system, method='flow'):
+def duct_system_control(system, method='flow', co2_method=True):
 	# system_mode
 	system.mode = sum([room.mode for room in rooms])
 
@@ -926,15 +933,23 @@ def duct_system_control(system, method='flow'):
 			control0_r = 0
 
 		# fan_s control by pid
-		system.fan_s.inv, system.fan_s.e, system.fan_s.es = pid_control(target_s, set_point_s, control0_s, 0.002, 0, 0, system.fan_s.e, system.fan_s.es, control_max=50, control_min=15)
+		system.fan_s.inv, system.fan_s.e, system.fan_s.es = pid_control(target_s, set_point_s, control0_s, 0.005, 0, 0, system.fan_s.e, system.fan_s.es, control_max=50, control_min=15)
 
 		# fan_r control by pid
 		system.fan_r.inv, system.fan_r.e, system.fan_r.es = pid_control(target_r, set_point_r, control0_r, 0.002, 0, 0, system.fan_r.e, system.fan_r.es, control_max=50, control_min=15)
 
 		# ve, vm, vf 调节, theta_run
+		if co2_method:
+			# vm 控 CO2 导致能耗升高，是否要强控？
+			target = max([room.co2_p for room in rooms])
+			set_point = 1000
+			control0 = system.duct_mix_air.damper.theta
+			system.duct_mix_air.damper.theta, system.duct_mix_air.damper.e, system.duct_mix_air.es = pid_control(target, set_point, control0, 0.01, 0, 0, system.duct_mix_air.damper.e, system.duct_mix_air.damper.es, control_max=70, control_min=0, tf=-1)
+			system.duct_mix_air.damper.theta_run()
+
 
 # 设定开始和结束的时间
-start = pd.Timestamp('2001/08/27')
+start = pd.Timestamp('2001/08/29')
 end = pd.Timestamp('2001/08/30')
 output_time = pd.date_range(start, end, freq='min').values
 
@@ -980,15 +995,17 @@ for cal_step in range(int((end - start).view('int64') / project['dt'] / 10e8)):
 	output.extend([room.indoor_temp for room in rooms])
 	output.extend([room.capacity for room in rooms])
 	output.extend([vav1.theta, vav2.theta, vav3.theta, f1.inv, f2.inv, outdoor_temp[cal_step]])
+	output.extend([room.co2_p for room in rooms])
+	output.extend([duct_system.duct_mix_air.damper.theta])
 
-output = np.array(output).reshape((-1, 12))
+output = np.array(output).reshape((-1, 16))
 output = pd.DataFrame(output)
 output['time'] = output_time[:-1]
 output.set_index('time', inplace=True)
 print(output)
 
-# plt.plot(output)
-# plt.show()
+plt.plot(output)
+plt.show()
 
 output.to_csv('output/load_control.csv')
 
