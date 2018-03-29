@@ -596,10 +596,9 @@ class Fan(object):
 		self.ideal = ideal  # 是否是理想风机(流量和频率成正比，压力和频率的平方成正比)
 		self.g = 0
 		self.p = 0
-		self.inv = 50
+		self.inv = 20
 		self.e = 0
 		self.es = 0
-
 
 		# 对不同频率下的风量和压力拟合，求出曲线的系数
 		if ideal:
@@ -699,8 +698,7 @@ class Serial(Branch):
 # 排风新风混风段 及 整个风管系统的物理模型
 class DuctSystem(object):
 	# 构筑风系统 包括，5段风管，两台风机，一个空调箱，空调箱作为定压源
-	def __init__(self, duct_supply_air, duct_return_air, duct_exhaust_air, duct_fresh_air,
-	             duct_mix_air, fan_s, fan_r, dp_ahu=200):
+	def __init__(self, duct_supply_air, duct_return_air, duct_exhaust_air, duct_fresh_air, duct_mix_air, fan_s, fan_r, dp_ahu=200):
 		self.duct_supply_air = duct_supply_air
 		if isinstance(duct_return_air, Duct):  # 确保类型匹配
 			self.duct_return_air = duct_return_air
@@ -779,6 +777,7 @@ duct_exhaust_air = Duct(5427, 0.95, 3.7+0.9+0.4+0.05, damper=exhaust_air_damper,
 duct_fresh_air = Duct(5427, 0.78, 1.4+0.1+0.4, damper=fresh_air_damper, a=0.7)
 duct_mix_air = Duct(5427, 2.2, 0.3+0.4+1.5, damper=mix_air_damper, a=0.7)
 
+# 风机特性曲线
 g = [0, 200, 400, 600, 800, 1000, 1200, 1400, 1600, 1800]
 p = [[443, 383, 348, 305, 277, 249, 216, 172, 112, 30]]
 p.append([355, 296, 256, 238, 207, 182, 148, 97, 21])
@@ -935,7 +934,7 @@ def duct_system_control(system, method='flow'):
 		# ve, vm, vf 调节, theta_run
 
 # 设定开始和结束的时间
-start = pd.Timestamp('2001/08/29')
+start = pd.Timestamp('2001/08/27')
 end = pd.Timestamp('2001/08/30')
 output_time = pd.date_range(start, end, freq='min').values
 
