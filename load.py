@@ -363,14 +363,14 @@ class Rooms(object):
 	def room_co2(self, step):
 		# fresh air
 		g_sum = sum([room.duct.g for room in rooms])
-		#print(step)
-		#print(g_sum)
-		g_fresh_sum = duct_system.g_supply_air - duct_system.g_mix_air
+		# print(step)
+		# print(g_sum)
+		g_fresh_sum = abs(duct_system.g_supply_air - duct_system.g_mix_air)
 		if g_sum:
 			self.g_fresh = self.duct.g * g_fresh_sum / g_sum
 		else:
 			self.g_fresh = 0
-		#print(self.g_fresh)
+		# print(self.g_fresh)
 		# co2
 		self.co2_dp = (0.02 * self.human_n * self.human_schedule[step] * project['dt'] / 3600 - (self.co2_p - 400)
 		               * 1e-6 * self.g_fresh * project['dt'] / 3600) / self.volume
@@ -547,7 +547,7 @@ class Duct(object):
 	# 多态
 	def g_cal(self, g):
 		self.g = g
-		self.p = self.s * self.g ** 2
+		self.p = self.s * (self.g / 3600) ** 2
 
 	def s_cal(self):
 		if self.damper:
@@ -724,6 +724,7 @@ class DuctSystem(object):
 		self.g_return_air = 0
 		self.g_supply_air = 0
 		self.g_mix_air = 0
+		self.set_point_pressure = 20
 
 	def balance(self):
 		# 管路平衡计算
@@ -887,22 +888,35 @@ def room_control(room, step, season, method='flow'):
 			target = room.duct.g
 			set_point = room.g_set
 			control0 = room.duct.damper.theta
+			tf = -1
+			p = 0.01
+			i = 0.000005
+			d = 0
 		elif method == 'pressure':
 			target = room.indoor_temp
 			if season == 'summer':
 				set_point = room.indoor_temp_set_point_summer
+				tf = 1
 			elif season == 'winter':
 				set_point = room.indoor_temp_set_point_winter
+				tf = 1
 			else:
 				set_point = 0
 			control0 = room.duct.damper.theta
+			p = 0.5
+			i = 0.000005
+			d = 0
 		else:
 			target = 0
 			set_point = 0
 			control0 = 0
+			tf = 0
+			p = 0
+			i = 0
+			d = 0
 
 		# damper control by pid
-		room.duct.damper.theta, room.e, room.es = pid_control(target, set_point, control0, 0.01, 0.00005, 0, room.e, room.es, control_max=70, control_min=0, tf=-1)
+		room.duct.damper.theta, room.e, room.es = pid_control(target, set_point, control0, p, i, d, room.e, room.es, control_max=70, control_min=0, tf=tf)
 		room.duct.damper.theta_run()
 
 
@@ -913,17 +927,78 @@ def duct_system_control(system, method='flow', co2_method=True):
 	if system.mode:
 		# fan_s
 		if method == 'flow':
+			# 总风量控制
 			target_s = system.duct_supply_air.g
 			target_r = system.duct_return_air.g
 			set_point_s = sum([room.g_set for room in rooms])
-			set_point_r = set_point_s + 20
+			set_point_r = set_point_s - 20
 			control0_s = system.fan_s.inv
 			control0_r = system.fan_r.inv
+			tf = 1
+			p_s = 0.05
+			i_s = 0
+			d_s = 0
+			p_r = 0.05
+			i_r = 0
+			d_r = 0
 		elif method == 'pressure':
+			# 定压力控制
 			target_s = rooms[0].duct.p
-			set_point_s = 30
+			target_r = rooms[0].duct.p
+			set_point_s = system.set_point_pressure
+			set_point_r = system.set_point_pressure
 			control0_s = system.fan_s.inv
-			# r
+			control0_r = system.fan_r.inv
+			tf = 1
+			p_s = 0.05
+			i_s = 0
+			d_s = 0
+			p_r = 0.02
+			i_r = 0
+			d_r = 0
+		elif method == 'pressure+':
+			# 变压力控制
+			vav = np.array([room.duct.damper.theta for room in rooms])
+			if all(vav > 40):
+				system.set_point_pressure *= 0.97
+			if any(vav < 10):
+				system.set_point_pressure *= 1.03
+			# control
+			target_s = rooms[0].duct.p
+			target_r = rooms[0].duct.p
+			set_point_s = system.set_point_pressure
+			set_point_r = system.set_point_pressure
+			control0_s = system.fan_s.inv
+			control0_r = system.fan_r.inv
+			tf = 1
+			p_s = 1
+			i_s = 0
+			d_s = 0
+			p_r = 0.5
+			i_r = 0
+			d_r = 0
+		elif method == 'pressure+pressure':
+			# 变压力加定压力控制
+			vav = np.array([room.duct.damper.theta for room in rooms])
+			# 风阀全闭时压力设定值不变
+			if all(vav > 30) and all(vav < 65):
+				system.set_point_pressure *= 0.97
+			if any(vav < 5):
+				system.set_point_pressure *= 1.03
+			# control
+			target_s = rooms[0].duct.p
+			target_r = rooms[0].duct.p
+			set_point_s = system.set_point_pressure
+			set_point_r = system.set_point_pressure
+			control0_s = system.fan_s.inv
+			control0_r = system.fan_r.inv
+			tf = 1
+			p_s = 0.1
+			i_s = 0
+			d_s = 0
+			p_r = 0.05
+			i_r = 0
+			d_r = 0
 		else:
 			target_s = 0
 			target_r = 0
@@ -931,12 +1006,19 @@ def duct_system_control(system, method='flow', co2_method=True):
 			set_point_r = 0
 			control0_s = 0
 			control0_r = 0
+			tf = 0
+			p_s = 0.005
+			i_s = 0
+			d_s = 0
+			p_r = 0.002
+			i_r = 0
+			d_r = 0
 
 		# fan_s control by pid
-		system.fan_s.inv, system.fan_s.e, system.fan_s.es = pid_control(target_s, set_point_s, control0_s, 0.005, 0, 0, system.fan_s.e, system.fan_s.es, control_max=50, control_min=15)
+		system.fan_s.inv, system.fan_s.e, system.fan_s.es = pid_control(target_s, set_point_s, control0_s, p_s, i_s, d_s, system.fan_s.e, system.fan_s.es, control_max=50, control_min=15, tf=tf)
 
 		# fan_r control by pid
-		system.fan_r.inv, system.fan_r.e, system.fan_r.es = pid_control(target_r, set_point_r, control0_r, 0.002, 0, 0, system.fan_r.e, system.fan_r.es, control_max=50, control_min=15)
+		system.fan_r.inv, system.fan_r.e, system.fan_r.es = pid_control(target_r, set_point_r, control0_r, p_r, i_r, d_r, system.fan_r.e, system.fan_r.es, control_max=50, control_min=15, tf=tf)
 
 		# ve, vm, vf 调节, theta_run
 		if co2_method:
@@ -944,7 +1026,11 @@ def duct_system_control(system, method='flow', co2_method=True):
 			target = max([room.co2_p for room in rooms])
 			set_point = 1000
 			control0 = system.duct_mix_air.damper.theta
-			system.duct_mix_air.damper.theta, system.duct_mix_air.damper.e, system.duct_mix_air.es = pid_control(target, set_point, control0, 0.01, 0, 0, system.duct_mix_air.damper.e, system.duct_mix_air.damper.es, control_max=70, control_min=0, tf=-1)
+			tf = -1
+			p = 0.1
+			i = 0
+			d = 0
+			system.duct_mix_air.damper.theta, system.duct_mix_air.damper.e, system.duct_mix_air.es = pid_control(target, set_point, control0, p, i, d, system.duct_mix_air.damper.e, system.duct_mix_air.damper.es, control_max=70, control_min=0, tf=tf)
 			system.duct_mix_air.damper.theta_run()
 
 
@@ -981,12 +1067,13 @@ for cal_step in range(int((end - start).view('int64') / project['dt'] / 10e8)):
 	# control
 	for room in rooms:
 		deltatemp2flow(room, season)
-		room_control(room, cal_step, season)
+		room_control(room, cal_step, season, method='pressure')
 
-	duct_system_control(duct_system)
+	duct_system_control(duct_system, method='pressure+pressure')
 
 	# g,p distribute
 	all_balanced()
+	# print(duct_1.p)
 
 	# after
 	for room in rooms:
@@ -996,9 +1083,9 @@ for cal_step in range(int((end - start).view('int64') / project['dt'] / 10e8)):
 	output.extend([room.capacity for room in rooms])
 	output.extend([vav1.theta, vav2.theta, vav3.theta, f1.inv, f2.inv, outdoor_temp[cal_step]])
 	output.extend([room.co2_p for room in rooms])
-	output.extend([duct_system.duct_mix_air.damper.theta])
+	output.extend([duct_system.duct_mix_air.damper.theta, duct_system.set_point_pressure])
 
-output = np.array(output).reshape((-1, 16))
+output = np.array(output).reshape((-1, 17))
 output = pd.DataFrame(output)
 output['time'] = output_time[:-1]
 output.set_index('time', inplace=True)
