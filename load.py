@@ -873,10 +873,10 @@ def deltatemp2flow(room, season):
 def room_control(room, step, season, method='flow'):
 	# mode / schedule
 	if room.HVAC_schedule[step]:
-		if ((room.indoor_temp > 22) & (season == 'winter')) or ((room.indoor_temp < 24) & (season == 'summer')):
-			room.mode = 0
-		else:
-			room.mode = 1
+		# if ((room.indoor_temp > 22) & (season == 'winter')) or ((room.indoor_temp < 24) & (season == 'summer')):
+		# 	room.mode = 0
+		# else:
+		# 	room.mode = 1
 		room.mode = 1
 	else:
 		room.mode = 0
@@ -920,7 +920,7 @@ def room_control(room, step, season, method='flow'):
 		room.duct.damper.theta_run()
 
 
-def duct_system_control(system, method='flow', co2_method=True):
+def duct_system_control(system, method='flow', co2_method=False):
 	# system_mode
 	system.mode = sum([room.mode for room in rooms])
 
@@ -935,7 +935,7 @@ def duct_system_control(system, method='flow', co2_method=True):
 			control0_s = system.fan_s.inv
 			control0_r = system.fan_r.inv
 			tf = 1
-			p_s = 0.05
+			p_s = 0.005
 			i_s = 0
 			d_s = 0
 			p_r = 0.05
@@ -1007,10 +1007,10 @@ def duct_system_control(system, method='flow', co2_method=True):
 			control0_s = 0
 			control0_r = 0
 			tf = 0
-			p_s = 0.005
+			p_s = 0
 			i_s = 0
 			d_s = 0
-			p_r = 0.002
+			p_r = 0
 			i_r = 0
 			d_r = 0
 
@@ -1035,8 +1035,8 @@ def duct_system_control(system, method='flow', co2_method=True):
 
 
 # 设定开始和结束的时间
-start = pd.Timestamp('2001/08/29')
-end = pd.Timestamp('2001/08/30')
+start = pd.Timestamp('2001/05/29')
+end = pd.Timestamp('2001/05/30')
 output_time = pd.date_range(start, end, freq='min').values
 
 output = []
@@ -1067,9 +1067,9 @@ for cal_step in range(int((end - start).view('int64') / project['dt'] / 10e8)):
 	# control
 	for room in rooms:
 		deltatemp2flow(room, season)
-		room_control(room, cal_step, season, method='pressure')
+		room_control(room, cal_step, season, method='flow')
 
-	duct_system_control(duct_system, method='pressure+pressure')
+	duct_system_control(duct_system, method='flow')
 
 	# g,p distribute
 	all_balanced()
