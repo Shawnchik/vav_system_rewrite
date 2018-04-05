@@ -378,34 +378,36 @@ class Rooms(object):
 		self.co2_p += self.co2_dp * 1e6
 
 	# 室内温度计算模型
-	# 改
-	def load_cal(self, step):
-		if self.mode:
-			# 空调开
-			temp0 = self.BRC / self.BRM
-			if temp0 <= 20:
-				self.load = (self.BRC - self.BRM * 20) / 1000
-				self.load_sum_w += self.load
-				self.load_max_w = min(self.load_max_w, self.load)
-			elif temp0 >= 26:
-				self.load = (self.BRC - self.BRM * 26) / 1000
-				self.load_sum_s += self.load
-				self.load_max_s = max(self.load_max_s, self.load)
-			else:
-				self.load = 0
-				self.indoor_temp = temp0
-		else:
-			# 空调关
-			self.indoor_temp = self.BRC / self.BRM
-			self.indoor_humidity = self.BRCX / self.BRMX
-			self.load = 0
+	# # 改
+	# def load_cal(self, step):
+	# 	if self.mode:
+	# 		# 空调开
+	# 		temp0 = self.BRC / self.BRM
+	# 		if temp0 <= 20:
+	# 			self.load = (self.BRC - self.BRM * 20) / 1000
+	# 			self.load_sum_w += self.load
+	# 			self.load_max_w = min(self.load_max_w, self.load)
+	# 		elif temp0 >= 26:
+	# 			self.load = (self.BRC - self.BRM * 26) / 1000
+	# 			self.load_sum_s += self.load
+	# 			self.load_max_s = max(self.load_max_s, self.load)
+	# 		else:
+	# 			self.load = 0
+	# 			self.indoor_temp = temp0
+	# 	else:
+	# 		# 空调关
+	# 		self.indoor_temp = self.BRC / self.BRM
+	# 		self.indoor_humidity = self.BRCX / self.BRMX
+	# 		self.load = 0
 
 
 	# 后处理
 	def after_cal(self, step, season):
 		if self.mode:
-			# capacity
-			self.capacity = self.duct.g * 11 * 1.005 * 1.2 / 3600
+			# capacity(summer)
+			self.capacity = self.duct.g * (26 - duct_system.supply_air_t) * 1.005 * 1.2 / 3600
+			# capacity(winter)
+			# !!!!!!!!!!
 			# indoor_temp
 			if season == 'winter':
 				self.indoor_temp = (self.BRC + self.capacity * 1000) / self.BRM
@@ -721,10 +723,15 @@ class DuctSystem(object):
 		self.fan_r = fan_r
 		self.dp_ahu = dp_ahu
 		self.mode = 0
+		self.mode0 = 0
 		self.g_return_air = 0
 		self.g_supply_air = 0
 		self.g_mix_air = 0
 		self.set_point_pressure = 20
+		self.supply_air_t = 15
+		self.water_flow = 4
+		self.water_flow_e = 0
+		self.water_flow_es = 0
 
 	def balance(self):
 		# 管路平衡计算
@@ -763,6 +770,215 @@ class DuctSystem(object):
 		# 检查气流方向是否正确 ua<0, ub>0
 
 		#print(g1/3600, g2/3600, p1, p2, ub, ua, g31*3600, g32*3600, g33*3600)
+
+	def air_state_cal(self, ex):
+		# 计算混风控制状态
+		# return air state
+		self.indoor_temp_avg = np.average([room.indoor_temp for room in rooms])
+		self.indoor_humidity_avg = np.average([room.indoor_humidity for room in rooms])
+		self.indoor_air_g = self.g_return_air
+		# self.h0 = t_x2h(self.indoor_temp_avg, self.indoor_humidity_avg)
+		# fresh air state
+		self.fresh_air_temp = outdoor_temp[cal_step]
+		self.fresh_air_humidity = outdoor_humidity[cal_step]
+		self.fresh_air_g = abs(duct_system.g_supply_air - duct_system.g_mix_air)
+		# mixed air state
+		self.mixed_air_temp = (self.indoor_temp_avg * self.indoor_air_g + self.fresh_air_temp * self.fresh_air_g) / (self.indoor_air_g + self.fresh_air_g)
+		self.mixed_air_humidity = (self.indoor_humidity_avg * self.indoor_air_g + self.fresh_air_humidity * self.fresh_air_g) / (self.indoor_air_g + self.fresh_air_g)
+		self.h0 = t_x2h(self.mixed_air_temp, self.mixed_air_humidity)
+		# 露点
+		self.h_dew = phi_x2h(95, t_phi2x(self.mixed_air_temp, self.mixed_air_humidity))
+
+		# 计算ex换热量
+		ex.t_air_in = self.mixed_air_temp
+		ex.t_water_in = 7
+		ex.flow_air = self.g_supply_air
+		ex.epsilon_cal(self.water_flow)
+		ex.epsilon_to_temp()
+		ex.q_to_dh()
+		self.dh = ex.dh
+		self.h1 = self.h0 - self.dh
+
+		# 判断是否结露，计算送风温度
+		if self.h1 < self.h_dew:
+			ex.t_air_out = phi_h2t(95, self.h1)
+		else:
+			ex.t_air_out = x_h2t(t_phi2x(self.mixed_air_temp, self.mixed_air_humidity), self.h1)
+
+		# 送风温度
+		self.supply_air_t = ex.t_air_out
+
+
+# 湿空气线图计算
+# 绝对温度计算饱和水蒸气压[kPa]
+def t2pws(t):
+	t = t + 273.15
+	return (np.exp(-5800 / t + 1.391-0.04864*t + 0.4176e-4 * np.power(t, 2) - 0.1445e-7 * np.power(t, 3) + 6.546*np.log(t))) / 1000
+
+
+# 水蒸气分压力求露点温度[K]
+def pw2t(pw):
+	# print(pw)
+	# y = np.log(1000 * pw)
+	# return -77.199 + 13.198 * y - 0.63772 * np.power(y, 2) + 0.71098 * np.power(y, 3)
+	y = np.log(pw * 1000 / 611.213)
+	return 13.715 * y + 0.84262 * y ** 2 + 1.9048e-2 * y ** 3 + 7.8158e-3 * y ** 4
+
+
+# 水蒸气分压力计算绝对湿度[kg/kg]
+def pw2x(pw, p=101.325):
+	return 0.62198 * pw / (p - pw)
+
+
+# 绝对湿度计算水蒸气分压力[kPa]
+def x2pw(x, p=101.325):
+	return x * p / (x + 0.62198)
+
+
+# 温度和水蒸气分压力求相对湿度
+def t_pw2phi(t, pw):
+	return pw * 100 / t2pws(t)
+
+
+# 温度和绝对湿度求相对湿度
+def t_x2phi(t, x):
+	return t_pw2phi(t, x2pw(x))
+
+
+# 温度和相对湿度求水蒸气分压力
+def t_phi2pw(t, phi):
+	return float(phi) / 100 * t2pws(t)
+
+
+# 温度和相对湿度求绝对湿度
+def t_phi2x(t, phi):
+	return pw2x(t_phi2pw(t, phi))
+
+
+# 相对湿度和水蒸气分压力求温度
+def phi_pw2t(phi, pw):
+	# print(100 / phi * pw)
+	return pw2t(100 / phi * pw)
+
+
+# 相对湿度和绝对湿度求温度
+def phi_x2t(phi, x):
+	# print(x2pw(x))
+	return phi_pw2t(phi, x2pw(x))
+
+
+# 水蒸气分压和饱和水蒸气分压计算相对湿度[%]
+def pw_pws2phi(pw, pws):
+	return pw / pws * 100
+
+
+# 温度和绝对湿度计算焓值[J/kg]
+def t_x2h(t, x):
+	return 1005 * t + (1846 * t + 2501000) * x
+
+
+# 温度和相对湿度计算焓值
+def t_phi2h(t, phi):
+	return t_x2h(t, t_phi2x(t, phi))
+
+
+# 相对湿度和绝对湿度计算焓值
+def phi_x2h(phi, x):
+	# print(phi_x2t(phi, x))
+	return t_x2h(phi_x2t(phi, x), x)
+
+
+# 绝对湿度和焓值计算干球温度
+def x_h2t(x, h):
+	return (h - 2501000 * x) / (1005 + 1846 * x)
+
+
+# 干球温度和焓值计算绝对湿度
+def t_h2x(t, h):
+	return (h - 1005 * t) / (1846 * t + 2501000)
+
+
+# 相对湿度和焓值[J/kg]计算温度
+def phi_h2t(phi, h):
+	t0 = 20
+	delta = 0.1
+	epsilon = 0.01
+	error = 1.
+	t = t0
+
+	def f(t):
+		return h - t_x2h(t, t_phi2x(t, phi))
+
+	def f1(t):
+		return (f(t + delta) - f(t)) / delta
+
+	while error > epsilon:
+		t = t0 - f(t0) / f1(t0)
+		error = abs(t - t0)
+		t0 = t
+		# print(t, error)
+
+	return t
+
+# 热交换器
+class HeatExchanger(object):
+	# 风水对向流
+	def __init__(self, t_water_in, t_water_out, t_air_in, t_air_out, flow_air):
+		self.rho_air = 1.2
+		self.c_air = 1.005
+		self.rho_water = 1000
+		self.c_water = 4.2
+		self.t_water_in = t_water_in
+		self.t_water_out = t_water_out
+		self.t_air_in = t_air_in
+		self.t_air_out = t_air_out
+		self.flow_air = flow_air
+		self.flow_water = 0
+		self.LMDT = 0
+		self.KA = 0
+		self.dh = 0
+		self.epsilon = 0
+		self.KA_select()
+
+	def LMDT_cal(self):
+		dta = self.t_air_in - self.t_water_out
+		dtb = self.t_air_out - self.t_water_in
+		self.LMDT = (dta - dtb) / np.log(dta / dtb)
+
+	def KA_select(self):
+		self.LMDT_cal()
+		# self.q = self.flow_air * self.rho_air * self.c_air * (self.t_air_in - self.t_air_out) / 3600 * 1000
+		self.q = (t_phi2h(self.t_air_in, 50) - t_phi2h(self.t_air_out, 60)) / 3600 * self.rho_air * self.flow_air
+		self.KA = self.q / self.LMDT
+
+	def epsilon_cal(self, flow_water):
+		if flow_water and self.flow_air:
+			self.flow_water = flow_water
+			cgh = self.flow_air * self.rho_air * self.c_air / 3.6
+			cgc = self.flow_water * self.rho_water * self.c_water / 3.6
+			ws = min(cgh, cgc)
+			wl = max(cgh, cgc)
+			NTU = self.KA / ws
+			B = (1 - ws / wl) * NTU
+			self.epsilon = (1 - np.exp(-B)) / (1 - ws / wl * np.exp(-B))
+
+	def epsilon_cal2(self):
+		self.epsilon_2 = (self.t_air_in - self.t_air_out) / (self.t_air_in - self.t_water_in)
+
+	def epsilon_to_temp(self):
+		cgh = self.flow_air * self.rho_air * self.c_air / 3.6
+		cgc = self.flow_water * self.rho_water * self.c_water / 3.6
+		if cgh < cgc:
+			self.t_air_out = self.t_air_in - self.epsilon * (self.t_air_in - self.t_water_in)
+			self.q = self.flow_air * self.rho_air * self.c_air * (self.t_air_in - self.t_air_out) / 3600 * 1000
+			self.t_water_out = self.t_water_in + self.q / 1000 * 3600 / self.flow_water / self.rho_water / self.c_water
+		else:
+			self.t_water_out = self.t_water_in + self.epsilon * (self.t_air_in - self.t_water_in)
+			self.q = self.flow_water * self.rho_water * self.c_water * (- self.t_water_in + self.t_water_out) / 3600 * 1000
+			self.t_air_out = self.t_air_in - self.q / 1000 * 3600 / self.flow_air / self.rho_air / self.c_air
+
+	def q_to_dh(self):
+		self.dh = self.q / self.flow_air / self.rho_air * 3600
 
 
 # HVAC设备构成
@@ -825,6 +1041,9 @@ def all_balanced():
 
 # 风管系统
 duct_system = DuctSystem(duct_supply_air, duct_return_air, duct_exhaust_air, duct_fresh_air, duct_mix_air, f2, f1)
+
+# 换热器
+HE_ahu = HeatExchanger(7, 12, 28, 15, 5427)
 
 
 # 风管和房间连接
@@ -920,8 +1139,9 @@ def room_control(room, step, season, method='flow'):
 		room.duct.damper.theta_run()
 
 
-def duct_system_control(system, method='flow', co2_method=False):
+def duct_system_control(system, method='flow', co2_method=True):
 	# system_mode
+	system.mode0 = system.mode
 	system.mode = sum([room.mode for room in rooms])
 
 	if system.mode:
@@ -981,9 +1201,11 @@ def duct_system_control(system, method='flow', co2_method=False):
 			# 变压力加定压力控制
 			vav = np.array([room.duct.damper.theta for room in rooms])
 			# 风阀全闭时压力设定值不变
-			if all(vav > 30) and all(vav < 65):
+			if system.mode0 == 0:
+				system.set_point_pressure = 20
+			if all(vav > 40) and all(vav < 65):
 				system.set_point_pressure *= 0.97
-			if any(vav < 5):
+			if any(vav < 10):
 				system.set_point_pressure *= 1.03
 			# control
 			target_s = rooms[0].duct.p
@@ -1033,10 +1255,23 @@ def duct_system_control(system, method='flow', co2_method=False):
 			system.duct_mix_air.damper.theta, system.duct_mix_air.damper.e, system.duct_mix_air.es = pid_control(target, set_point, control0, p, i, d, system.duct_mix_air.damper.e, system.duct_mix_air.damper.es, control_max=70, control_min=0, tf=tf)
 			system.duct_mix_air.damper.theta_run()
 
+		# 水流量控制
+		# mode = '定送风温度‘
+		# def water_flow_control(system):
+		set_point = 15
+		target = system.supply_air_t
+		control0 = system.water_flow
+		tf = 1
+		p = 0.01
+		i = 0
+		d = 0
+		system.water_flow, system.water_flow_e, system.water_flow_es = pid_control(target, set_point, control0, p, i, d, system.water_flow_e, system.water_flow_es, control_max=10, control_min=0, tf=tf)
+
+
 
 # 设定开始和结束的时间
-start = pd.Timestamp('2001/05/29')
-end = pd.Timestamp('2001/05/30')
+start = pd.Timestamp('2001/08/29')
+end = pd.Timestamp('2001/08/30')
 output_time = pd.date_range(start, end, freq='min').values
 
 output = []
@@ -1075,6 +1310,9 @@ for cal_step in range(int((end - start).view('int64') / project['dt'] / 10e8)):
 	all_balanced()
 	# print(duct_1.p)
 
+	# supply_air_temp
+	duct_system.air_state_cal(HE_ahu)
+
 	# after
 	for room in rooms:
 		room.after_cal(cal_step, season)
@@ -1082,10 +1320,11 @@ for cal_step in range(int((end - start).view('int64') / project['dt'] / 10e8)):
 	output.extend([room.indoor_temp for room in rooms])
 	output.extend([room.capacity for room in rooms])
 	output.extend([vav1.theta, vav2.theta, vav3.theta, f1.inv, f2.inv, outdoor_temp[cal_step]])
-	output.extend([room.co2_p for room in rooms])
-	output.extend([duct_system.duct_mix_air.damper.theta, duct_system.set_point_pressure])
+	# output.extend([room.co2_p for room in rooms])
+	# output.extend([duct_system.duct_mix_air.damper.theta, duct_system.set_point_pressure])
+	output.extend([duct_system.supply_air_t, duct_system.water_flow])
 
-output = np.array(output).reshape((-1, 17))
+output = np.array(output).reshape((-1, 14))
 output = pd.DataFrame(output)
 output['time'] = output_time[:-1]
 output.set_index('time', inplace=True)
@@ -1094,7 +1333,7 @@ print(output)
 plt.plot(output)
 plt.show()
 
-output.to_csv('output/load_control.csv')
+# output.to_csv('output/load_control.csv')
 
 
 
