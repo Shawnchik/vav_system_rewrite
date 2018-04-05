@@ -729,7 +729,7 @@ class DuctSystem(object):
 		self.g_mix_air = 0
 		self.set_point_pressure = 20
 		self.supply_air_t = 15
-		self.water_flow = 4
+		self.water_flow = 0
 		self.water_flow_e = 0
 		self.water_flow_es = 0
 
@@ -775,19 +775,20 @@ class DuctSystem(object):
 		# 计算混风控制状态
 		# return air state
 		self.indoor_temp_avg = np.average([room.indoor_temp for room in rooms])
-		self.indoor_humidity_avg = np.average([room.indoor_humidity for room in rooms])
+		self.indoor_humidity_avg = np.average([room.indoor_humidity for room in rooms]) / 1000
 		self.indoor_air_g = self.g_return_air
 		# self.h0 = t_x2h(self.indoor_temp_avg, self.indoor_humidity_avg)
 		# fresh air state
 		self.fresh_air_temp = outdoor_temp[cal_step]
-		self.fresh_air_humidity = outdoor_humidity[cal_step]
+		self.fresh_air_humidity = outdoor_humidity[cal_step] / 1000
 		self.fresh_air_g = abs(duct_system.g_supply_air - duct_system.g_mix_air)
 		# mixed air state
 		self.mixed_air_temp = (self.indoor_temp_avg * self.indoor_air_g + self.fresh_air_temp * self.fresh_air_g) / (self.indoor_air_g + self.fresh_air_g)
 		self.mixed_air_humidity = (self.indoor_humidity_avg * self.indoor_air_g + self.fresh_air_humidity * self.fresh_air_g) / (self.indoor_air_g + self.fresh_air_g)
 		self.h0 = t_x2h(self.mixed_air_temp, self.mixed_air_humidity)
+		# print(self.fresh_air_temp, self.fresh_air_humidity, self.mixed_air_temp, self.mixed_air_humidity)
 		# 露点
-		self.h_dew = phi_x2h(95, t_phi2x(self.mixed_air_temp, self.mixed_air_humidity))
+		self.h_dew = phi_x2h(95, self.mixed_air_humidity)
 
 		# 计算ex换热量
 		ex.t_air_in = self.mixed_air_temp
@@ -798,12 +799,13 @@ class DuctSystem(object):
 		ex.q_to_dh()
 		self.dh = ex.dh
 		self.h1 = self.h0 - self.dh
+		# print(self.h0, self.dh, self.h1, self.h_dew)
 
 		# 判断是否结露，计算送风温度
 		if self.h1 < self.h_dew:
 			ex.t_air_out = phi_h2t(95, self.h1)
 		else:
-			ex.t_air_out = x_h2t(t_phi2x(self.mixed_air_temp, self.mixed_air_humidity), self.h1)
+			ex.t_air_out = x_h2t(self.mixed_air_humidity, self.h1)
 
 		# 送风温度
 		self.supply_air_t = ex.t_air_out
@@ -953,6 +955,7 @@ class HeatExchanger(object):
 
 	def epsilon_cal(self, flow_water):
 		if flow_water and self.flow_air:
+			# print(self.flow_air)
 			self.flow_water = flow_water
 			cgh = self.flow_air * self.rho_air * self.c_air / 3.6
 			cgc = self.flow_water * self.rho_water * self.c_water / 3.6
@@ -961,6 +964,7 @@ class HeatExchanger(object):
 			NTU = self.KA / ws
 			B = (1 - ws / wl) * NTU
 			self.epsilon = (1 - np.exp(-B)) / (1 - ws / wl * np.exp(-B))
+			# print(self.epsilon)
 
 	def epsilon_cal2(self):
 		self.epsilon_2 = (self.t_air_in - self.t_air_out) / (self.t_air_in - self.t_water_in)
@@ -976,9 +980,11 @@ class HeatExchanger(object):
 			self.t_water_out = self.t_water_in + self.epsilon * (self.t_air_in - self.t_water_in)
 			self.q = self.flow_water * self.rho_water * self.c_water * (- self.t_water_in + self.t_water_out) / 3600 * 1000
 			self.t_air_out = self.t_air_in - self.q / 1000 * 3600 / self.flow_air / self.rho_air / self.c_air
+		# print(self.t_air_out, self.q)
 
 	def q_to_dh(self):
 		self.dh = self.q / self.flow_air / self.rho_air * 3600
+		# print(self.dh)
 
 
 # HVAC设备构成
@@ -1261,7 +1267,7 @@ def duct_system_control(system, method='flow', co2_method=True):
 		set_point = 15
 		target = system.supply_air_t
 		control0 = system.water_flow
-		tf = 1
+		tf = -1
 		p = 0.01
 		i = 0
 		d = 0
@@ -1311,20 +1317,21 @@ for cal_step in range(int((end - start).view('int64') / project['dt'] / 10e8)):
 	# print(duct_1.p)
 
 	# supply_air_temp
-	duct_system.air_state_cal(HE_ahu)
+	if duct_system.mode:
+		duct_system.air_state_cal(HE_ahu)
 
 	# after
 	for room in rooms:
 		room.after_cal(cal_step, season)
 
 	output.extend([room.indoor_temp for room in rooms])
-	output.extend([room.capacity for room in rooms])
-	output.extend([vav1.theta, vav2.theta, vav3.theta, f1.inv, f2.inv, outdoor_temp[cal_step]])
+	# output.extend([room.capacity for room in rooms])
+	# output.extend([vav1.theta, vav2.theta, vav3.theta, f1.inv, f2.inv, outdoor_temp[cal_step]])
 	# output.extend([room.co2_p for room in rooms])
 	# output.extend([duct_system.duct_mix_air.damper.theta, duct_system.set_point_pressure])
-	output.extend([duct_system.supply_air_t, duct_system.water_flow])
+	output.extend([duct_system.supply_air_t, duct_system.water_flow, HE_ahu.epsilon])
 
-output = np.array(output).reshape((-1, 14))
+output = np.array(output).reshape((-1, 6))
 output = pd.DataFrame(output)
 output['time'] = output_time[:-1]
 output.set_index('time', inplace=True)
