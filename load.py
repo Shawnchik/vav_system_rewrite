@@ -207,6 +207,8 @@ class Rooms(object):
 		self.equipment_wl = float(room_df.equipment_wl)
 		self.equipment_schedule = {0: schedule[0], 1: schedule[1]}[room_df.equipment_schedule].values
 		self.mode = 0
+		self.rho = 1.2
+		self.r = 2501000
 
 		self.human_s = 0
 		self.human_l = 0
@@ -415,6 +417,19 @@ class Rooms(object):
 				self.indoor_temp = (self.BRC - self.capacity * 1000) / self.BRM
 			else:
 				pass
+			# indoor_humidity
+			# print(self.indoor_humidity / 1000, outdoor_humidity[step] / 1000, duct_system.supply_air_humidity)
+			# print(self.rho * self.volume * self.indoor_humidity / project['dt'] / 1000, self.rho * self.volume * self.n_air / 3600 * outdoor_humidity[step] / 1000,
+			#       self.human_n * self.human_l / self.r, self.duct.g * self.rho * duct_system.supply_air_humidity / 3600)
+			# print(self.rho * self.volume / project['dt'], self.rho * self.n_air * self.volume / 3600, self.rho * self.duct.g / 3600)
+			self.indoor_humidity = (self.rho * self.volume * self.indoor_humidity / project['dt'] / 1000 +
+			                        self.rho * self.volume * self.n_air / 3600 * outdoor_humidity[step] / 1000 +
+			                        self.human_n * self.human_l / self.r +
+			                        self.duct.g * self.rho * duct_system.supply_air_humidity / 3600
+			                        ) / (self.rho * self.volume / project['dt'] +
+									self.rho * self.n_air * self.volume / 3600 +
+									self.rho * self.duct.g / 3600) * 1000
+
 		else:
 			self.indoor_temp = self.BRC / self.BRM
 			self.indoor_humidity = self.BRCX / self.BRMX
@@ -819,11 +834,14 @@ class DuctSystem(object):
 		# 判断是否结露，计算送风温度
 		if self.h1 < self.h_dew:
 			ex.t_air_out = phi_h2t(95, self.h1)
+			ex.humidity_air_out = t_phi2x(ex.t_air_out, 95)
 		else:
 			ex.t_air_out = x_h2t(self.mixed_air_humidity, self.h1)
+			ex.humidity_air_out = self.mixed_air_humidity
 
 		# 送风温度
 		self.supply_air_t = ex.t_air_out
+		self.supply_air_humidity = ex.humidity_air_out
 
 
 # 湿空气线图计算
@@ -955,6 +973,7 @@ class HeatExchanger(object):
 		self.KA = 0
 		self.dh = 0
 		self.epsilon = 0
+		self.humidity_air_out = 0
 		self.KA_select()
 
 	def LMDT_cal(self):
@@ -1350,8 +1369,9 @@ for cal_step in range(int((end - start).view('int64') / project['dt'] / 10e8)):
 	output.extend([duct_system.g_return_air, duct_system.g_supply_air, duct_system.g_mix_air])
 	output.extend([duct_system.supply_air_t, duct_system.indoor_temp_avg, duct_system.fresh_air_temp,
 	               duct_system.mixed_air_temp, duct_system.water_flow, HE_ahu.epsilon, HE_ahu.t_water_out])
+	output.extend([room.indoor_humidity for room in rooms])
 
-output = np.array(output).reshape((-1, 27))
+output = np.array(output).reshape((-1, 30))
 output = pd.DataFrame(output)
 output['time'] = output_time[:-1]
 output.set_index('time', inplace=True)
