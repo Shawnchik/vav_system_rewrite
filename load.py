@@ -732,6 +732,18 @@ class DuctSystem(object):
 		self.water_flow = 0
 		self.water_flow_e = 0
 		self.water_flow_es = 0
+		self.indoor_temp_avg = 0
+		self.indoor_humidity_avg = 0
+		self.indoor_air_g = 0
+		self.fresh_air_temp = 0
+		self.fresh_air_humidity = 0
+		self.fresh_air_g = 0
+		self.mixed_air_temp = 0
+		self.mixed_air_humidity = 0
+		self.h0 = 0
+		self.h_dew = 0
+		self.dh = 0
+		self.h1 = 0
 
 	def balance(self):
 		# 管路平衡计算
@@ -754,6 +766,9 @@ class DuctSystem(object):
 			]).flatten()
 
 		[self.g_return_air, self.g_supply_air, self.g_mix_air] = fsolve(f, np.array([3600, 3600, 3600]))
+		self.duct_return_air.g = self.g_return_air
+		self.duct_supply_air.g = self.g_supply_air
+		self.duct_mix_air.g = self.g_mix_air
 		#print(self.g_return_air, self.g_supply_air, self.g_mix_air)
 
 	def balance_check(self):
@@ -951,7 +966,7 @@ class HeatExchanger(object):
 		self.LMDT_cal()
 		# self.q = self.flow_air * self.rho_air * self.c_air * (self.t_air_in - self.t_air_out) / 3600 * 1000
 		self.q = (t_phi2h(self.t_air_in, 50) - t_phi2h(self.t_air_out, 60)) / 3600 * self.rho_air * self.flow_air
-		self.KA = self.q / self.LMDT
+		self.KA = self.q / self.LMDT / 2
 
 	def epsilon_cal(self, flow_water):
 		if flow_water and self.flow_air:
@@ -1018,7 +1033,7 @@ p.append([300, 239, 194, 153, 110, 55])
 p.append([260, 200, 152, 107, 52])
 p.append([179, 129, 79, 24])
 # 送回风机
-g1 = list(map(lambda x: x * 5427 / 1200, g))
+g1 = list(map(lambda x: x * 4427 / 1200, g))
 p1 = [[x * 35 / 216 for x in pi] for pi in p]
 f1 = Fan(g1, p1)  # 回风机
 g2 = list(map(lambda x: x * 5427 / 1200, g))
@@ -1160,11 +1175,14 @@ def duct_system_control(system, method='flow', co2_method=True):
 			set_point_r = set_point_s - 20
 			control0_s = system.fan_s.inv
 			control0_r = system.fan_r.inv
+			# print(target_s, target_r)
+			# print(set_point_s, set_point_r)
+			# print(control0_s, control0_r)
 			tf = 1
 			p_s = 0.005
 			i_s = 0
 			d_s = 0
-			p_r = 0.05
+			p_r = 0.005
 			i_r = 0
 			d_r = 0
 		elif method == 'pressure':
@@ -1255,7 +1273,7 @@ def duct_system_control(system, method='flow', co2_method=True):
 			set_point = 1000
 			control0 = system.duct_mix_air.damper.theta
 			tf = -1
-			p = 0.1
+			p = 0.005
 			i = 0
 			d = 0
 			system.duct_mix_air.damper.theta, system.duct_mix_air.damper.e, system.duct_mix_air.es = pid_control(target, set_point, control0, p, i, d, system.duct_mix_air.damper.e, system.duct_mix_air.damper.es, control_max=70, control_min=0, tf=tf)
@@ -1276,7 +1294,7 @@ def duct_system_control(system, method='flow', co2_method=True):
 
 
 # 设定开始和结束的时间
-start = pd.Timestamp('2001/08/29')
+start = pd.Timestamp('2001/08/27')
 end = pd.Timestamp('2001/08/30')
 output_time = pd.date_range(start, end, freq='min').values
 
@@ -1325,13 +1343,15 @@ for cal_step in range(int((end - start).view('int64') / project['dt'] / 10e8)):
 		room.after_cal(cal_step, season)
 
 	output.extend([room.indoor_temp for room in rooms])
-	# output.extend([room.capacity for room in rooms])
-	# output.extend([vav1.theta, vav2.theta, vav3.theta, f1.inv, f2.inv, outdoor_temp[cal_step]])
-	# output.extend([room.co2_p for room in rooms])
-	# output.extend([duct_system.duct_mix_air.damper.theta, duct_system.set_point_pressure])
-	output.extend([duct_system.supply_air_t, duct_system.water_flow, HE_ahu.epsilon])
+	output.extend([room.capacity for room in rooms])
+	output.extend([vav1.theta, vav2.theta, vav3.theta, f1.inv, f2.inv, outdoor_temp[cal_step]])
+	output.extend([room.co2_p for room in rooms])
+	output.extend([duct_system.duct_mix_air.damper.theta, duct_system.set_point_pressure])
+	output.extend([duct_system.g_return_air, duct_system.g_supply_air, duct_system.g_mix_air])
+	output.extend([duct_system.supply_air_t, duct_system.indoor_temp_avg, duct_system.fresh_air_temp,
+	               duct_system.mixed_air_temp, duct_system.water_flow, HE_ahu.epsilon, HE_ahu.t_water_out])
 
-output = np.array(output).reshape((-1, 6))
+output = np.array(output).reshape((-1, 27))
 output = pd.DataFrame(output)
 output['time'] = output_time[:-1]
 output.set_index('time', inplace=True)
@@ -1340,7 +1360,7 @@ print(output)
 plt.plot(output)
 plt.show()
 
-# output.to_csv('output/load_control.csv')
+output.to_csv('output/load_control.csv')
 
 
 
