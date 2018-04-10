@@ -123,7 +123,7 @@ class Windows(Face):
 
 		# 相当外气温度
 		self.te_8760 = (self.GA / self.window_area / self.k - project['epsilon'] * self.Fs *
-		                np.array(weather_df['Diffused-Solar-Radiation']) / self.alpha_m + weather_df.Temperature)
+		                np.array(weather_df['Nocturnal-Radiation']) / self.alpha_m + weather_df.Temperature)
 
 
 class Walls(Face):
@@ -486,7 +486,7 @@ class Damper(object):
 			l.append(self.l)
 			zeta.append(self.zeta)
 			s.append(self.s)
-		#plt.plot(x, np.array(l) * 100, label=u"l/l_max")
+		# plt.plot(x, np.array(l) * 100, label=u"l/l_max")
 		plt.plot(x, np.log10(zeta), label=u'ln(zeta)')
 		plt.plot(x, np.log10([z+0.4 for z in zeta]), label=u'ln(zeta+)')
 		x0 = [0, 10, 20, 30, 40, 50, 60, 70]
@@ -496,7 +496,7 @@ class Damper(object):
 		plt.plot(x0[:-1], np.log10(y1), label='ln(1)')
 		plt.plot(x0[:-2], np.log10(y2), label='ln(2)')
 		plt.plot(x0, np.log10(y3), label='ln(3)')
-		#plt.plot(x, np.log(s), label=u'ln(s)')
+		# plt.plot(x, np.log(s), label=u'ln(s)')
 		plt.legend()
 		plt.grid(True)
 		plt.show()
@@ -789,7 +789,7 @@ class DuctSystem(object):
 		self.duct_return_air.g = self.g_return_air
 		self.duct_supply_air.g = self.g_supply_air
 		self.duct_mix_air.g = self.g_mix_air
-		#print(self.g_return_air, self.g_supply_air, self.g_mix_air)
+		# print(self.g_return_air, self.g_supply_air, self.g_mix_air)
 
 	def balance_check(self):
 		# 检查方程的解
@@ -804,7 +804,7 @@ class DuctSystem(object):
 		g33 = ((ub - ua)/self.duct_mix_air.s) ** 0.5
 		# 检查气流方向是否正确 ua<0, ub>0
 
-		#print(g1/3600, g2/3600, p1, p2, ub, ua, g31*3600, g32*3600, g33*3600)
+		# print(g1/3600, g2/3600, p1, p2, ub, ua, g31*3600, g32*3600, g33*3600)
 
 	def air_state_cal(self, ex):
 		# 计算混风控制状态
@@ -1307,7 +1307,6 @@ def duct_system_control(system, method='flow', co2_method=True, supply_air_temp_
 		# 水流量控制
 		# mode = '定送风温度‘
 		# def water_flow_control(system):
-
 
 		if supply_air_temp_reset:
 			if system.fan_s.inv < 16:
