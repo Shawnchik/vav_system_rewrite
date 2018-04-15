@@ -857,10 +857,13 @@ def t2pws(t):
 
 
 # 水蒸气分压力求露点温度[K]
-def pw2t(pw):
 	# print(pw)
 	# y = np.log(1000 * pw)
 	# return -77.199 + 13.198 * y - 0.63772 * np.power(y, 2) + 0.71098 * np.power(y, 3)
+
+
+# 饱和水蒸气分压力求温度
+def pw2t(pw):
 	y = np.log(pw * 1000 / 611.213)
 	return 13.715 * y + 0.84262 * y ** 2 + 1.9048e-2 * y ** 3 + 7.8158e-3 * y ** 4
 
