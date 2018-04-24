@@ -1031,9 +1031,9 @@ class HeatExchanger(object):
 
 
 # HVAC设备构成
-vav1 = Damper(0.45)
-vav2 = Damper(0.4)
-vav3 = Damper(0.45)
+vav1 = Damper(0.45, theta0=40)
+vav2 = Damper(0.4, theta0=40)
+vav3 = Damper(0.45, theta0=40)
 fresh_air_damper = Damper(0.7)
 exhaust_air_damper = Damper(0.7)
 mix_air_damper = Damper(0.7)
@@ -1052,7 +1052,7 @@ duct_mix_air = Duct(5427, 2.2, 0.3+0.4+1.5, damper=mix_air_damper, a=0.7)
 
 # 风机特性曲线
 g = [0, 200, 400, 600, 800, 1000, 1200, 1400, 1600, 1800]
-p = [[443, 383, 348, 305, 277, 249, 216, 172, 112, 30]]
+p = [[443, 383, 338, 305, 277, 249, 216, 172, 112, 30]]
 p.append([355, 296, 256, 238, 207, 182, 148, 97, 21])
 p.append([342, 284, 246, 217, 190, 161, 121, 62])
 p.append([336, 278, 236, 206, 178, 145, 97, 38])
@@ -1123,19 +1123,26 @@ def pid_control(target, set_point, control0, p, i, d, e0, es, control_max=1, con
 def deltatemp2flow(room, season):
 	# deltatemp
 	if season == 'summer':
-		deltatemp = room.indoor_temp - room.indoor_temp_set_point_summer
+		deltatemp = float(room.indoor_temp - room.indoor_temp_set_point_summer)
 	elif season == 'winter':
-		deltatemp = room.indoor_temp - room.indoor_temp_set_point_winter
+		deltatemp = float(room.indoor_temp - room.indoor_temp_set_point_winter)
 	else:
-		deltatemp = 0
+		deltatemp = 0.0
 
 	# 2flow
+	# if deltatemp < -1:
+	# 	room.g_set = room.gmin
+	# elif deltatemp > 1:
+	# 	room.g_set = room.gmax
+	# else:
+	# 	room.g_set = room.gmin + (deltatemp + 1) * (room.gmax - room.gmin) / 2
+
 	if deltatemp < -1:
 		room.g_set = room.gmin
-	elif deltatemp > 1:
+	elif deltatemp > 0.5:
 		room.g_set = room.gmax
 	else:
-		room.g_set = room.gmin + (deltatemp + 1) * (room.gmax - room.gmin) / 2
+		room.g_set = room.gmin + (deltatemp + 1) * (room.gmax - room.gmin) / 3 * 2
 
 
 def room_control(room, step, season, method='flow'):
@@ -1153,11 +1160,13 @@ def room_control(room, step, season, method='flow'):
 		# target / set_point / control0
 		if method == 'flow':
 			deltatemp2flow(room, season)
+			# target = room.indoor_temp
+			# set_point = room.indoor_temp_set_point_summer if season == 'summer' else room.indoor_temp_set_point_winter
 			target = room.duct.g
 			set_point = room.g_set
 			control0 = room.duct.damper.theta
 			tf = -1
-			p = 0.01
+			p = 0.0002
 			i = 0.000005
 			d = 0
 		elif method == 'pressure':
@@ -1200,18 +1209,18 @@ def duct_system_control(system, method='flow', co2_method=True, supply_air_temp_
 			target_s = system.duct_supply_air.g
 			target_r = system.duct_return_air.g
 			set_point_s = sum([room.g_set for room in rooms])
-			set_point_r = set_point_s - 20
+			set_point_r = set_point_s - 100
 			control0_s = system.fan_s.inv
 			control0_r = system.fan_r.inv
 			# print(target_s, target_r)
 			# print(set_point_s, set_point_r)
 			# print(control0_s, control0_r)
 			tf = 1
-			p_s = 0.005
-			i_s = 0
+			p_s = 0.0001
+			i_s = 0.000001
 			d_s = 0
-			p_r = 0.005
-			i_r = 0
+			p_r = 0.0001
+			i_r = 0.0000001
 			d_r = 0
 		elif method == 'pressure':
 			# 定压力控制
@@ -1292,7 +1301,7 @@ def duct_system_control(system, method='flow', co2_method=True, supply_air_temp_
 		system.fan_s.inv, system.fan_s.e, system.fan_s.es = pid_control(target_s, set_point_s, control0_s, p_s, i_s, d_s, system.fan_s.e, system.fan_s.es, control_max=50, control_min=15, tf=tf)
 
 		# fan_r control by pid
-		system.fan_r.inv, system.fan_r.e, system.fan_r.es = pid_control(target_r, set_point_r, control0_r, p_r, i_r, d_r, system.fan_r.e, system.fan_r.es, control_max=50, control_min=15, tf=tf)
+		system.fan_r.inv, system.fan_r.e, system.fan_r.es = pid_control(target_r, set_point_r, control0_r, p_r, i_r, d_r, system.fan_r.e, system.fan_r.es, control_max=40, control_min=15, tf=tf)
 
 		# ve, vm, vf 调节, theta_run
 		if co2_method:
@@ -1312,10 +1321,10 @@ def duct_system_control(system, method='flow', co2_method=True, supply_air_temp_
 		# def water_flow_control(system):
 
 		if supply_air_temp_reset:
-			if system.fan_s.inv < 16:
-				system.supply_air_set_point += 1
-			elif duct_system.fan_s.inv > 20:
-				system.supply_air_set_point = max(system.supply_air_set_point - 1, 15)
+			if system.fan_s.inv < 18:
+				system.supply_air_set_point += 0.2
+			elif duct_system.fan_s.inv > 22:
+				system.supply_air_set_point = max(system.supply_air_set_point - 0.2, 15)
 		if system.mode0 == 0:
 			system.supply_air_set_point = 15
 		target = system.supply_air_t
@@ -1330,7 +1339,7 @@ def duct_system_control(system, method='flow', co2_method=True, supply_air_temp_
 
 # 设定开始和结束的时间
 start = pd.Timestamp('2001/08/27')
-end = pd.Timestamp('2001/08/30')
+end = pd.Timestamp('2001/09/04')
 output_time = pd.date_range(start, end, freq='min').values
 
 output = []
@@ -1397,11 +1406,27 @@ output = pd.DataFrame(output)
 output['time'] = output_time[:-1]
 output.set_index('time', inplace=True)
 print(output)
+output.to_csv('FDD_data_base/0.csv')
 
-plt.plot(output)
+output = output.values
+plt.figure()
+plt.subplot(711)
+plt.plot(output[:, :3])
+plt.subplot(712)
+plt.plot(output[:, 3:6])
+plt.subplot(713)
+plt.plot(output[:, 6:9])
+plt.subplot(714)
+plt.plot(output[:, 9:11])
+plt.subplot(715)
+plt.plot(output[:, 17:20])
+plt.subplot(716)
+plt.plot(output[:, (21,22,23,24,27)])
+plt.subplot(717)
+plt.plot(output[:, (25,26)])
 plt.show()
 
-output.to_csv('output/load_control.csv')
+
 
 
 
