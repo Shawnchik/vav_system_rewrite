@@ -288,6 +288,7 @@ class Rooms(object):
 
 		# 初始条件
 		self.indoor_temp = 26
+		self.indoor_temp_sensor = self.indoor_temp
 		self.indoor_humidity = 0
 		self.indoor_RH = 0
 		self.ground_temp = 10
@@ -1121,11 +1122,12 @@ def pid_control(target, set_point, control0, p, i, d, e0, es, control_max=1, con
 
 
 def deltatemp2flow(room, season):
+	room.indoor_temp_sensor = room.indoor_temp + 2
 	# deltatemp
 	if season == 'summer':
-		deltatemp = float(room.indoor_temp - room.indoor_temp_set_point_summer)
+		deltatemp = float(room.indoor_temp_sensor - room.indoor_temp_set_point_summer)
 	elif season == 'winter':
-		deltatemp = float(room.indoor_temp - room.indoor_temp_set_point_winter)
+		deltatemp = float(room.indoor_temp_sensor - room.indoor_temp_set_point_winter)
 	else:
 		deltatemp = 0.0
 
@@ -1338,11 +1340,12 @@ def duct_system_control(system, method='flow', co2_method=True, supply_air_temp_
 
 
 # 设定开始和结束的时间
-start = pd.Timestamp('2001/08/27')
-end = pd.Timestamp('2001/09/04')
+start = pd.Timestamp('2001/08/01')
+end = pd.Timestamp('2001/09/01')
 output_time = pd.date_range(start, end, freq='min').values
 
 output = []
+dataset = []
 
 stepdelta = int((start - pd.Timestamp('2001/01/01')).view('int64') / project['dt'] / 10e8)
 
@@ -1389,6 +1392,7 @@ for cal_step in range(int((end - start).view('int64') / project['dt'] / 10e8)):
 	# outdoor
 	outdoor_RH = t_x2phi(outdoor_temp[cal_step], outdoor_humidity[cal_step] / 1000)
 
+	# plot
 	output.extend([room.indoor_temp for room in rooms])
 	output.extend([room.capacity for room in rooms])
 	output.extend([vav1.theta, vav2.theta, vav3.theta, f1.inv, f2.inv, outdoor_temp[cal_step]])
@@ -1401,12 +1405,32 @@ for cal_step in range(int((end - start).view('int64') / project['dt'] / 10e8)):
 	output.extend([duct_system.fresh_air_humidity * 1000, duct_system.mixed_air_humidity * 1000, duct_system.supply_air_humidity * 1000, outdoor_RH])
 	output.extend([room.indoor_RH for room in rooms])
 
+	# dataset
+	dataset.extend([room.indoor_temp_sensor for room in rooms])
+	dataset.extend([room.duct.damper.theta for room in rooms])
+	dataset.extend([room.duct.g for room in rooms])
+	dataset.extend([room.co2_p for room in rooms])
+	dataset.extend([room.indoor_RH for room in rooms])
+	dataset.extend([room.indoor_temp_set_point_summer for room in rooms])
+	dataset.extend([room.g_set for room in rooms])
+
+	dataset.extend([f2.inv, f1.inv, duct_system.supply_air_t, duct_system.mixed_air_temp, duct_system.duct_mix_air.damper.theta])
+	dataset.extend([duct_system.supply_air_set_point, HE_ahu.t_water_out, duct_system.water_flow, duct_supply_air.p, outdoor_temp[cal_step], outdoor_RH])
+
+
+dataset = np.array(dataset).reshape((-1, 32))
+dataset = pd.DataFrame(dataset)
+dataset['time'] = output_time[:-1]
+dataset.set_index('time', inplace=True)
+dataset.to_csv('FDD_data_base/dataset_f1.csv')
+
+
 output = np.array(output).reshape((-1, 38))
 output = pd.DataFrame(output)
 output['time'] = output_time[:-1]
 output.set_index('time', inplace=True)
-print(output)
-output.to_csv('FDD_data_base/0.csv')
+# print(output)
+# output.to_csv('FDD_data_base/f0.csv')
 
 output = output.values
 plt.figure()
@@ -1424,7 +1448,16 @@ plt.subplot(716)
 plt.plot(output[:, (21,22,23,24,27)])
 plt.subplot(717)
 plt.plot(output[:, (25,26)])
+plt.subplots_adjust(hspace=0)
 plt.show()
+
+# plt.figure()
+# for i in range(7):
+# 	plt.subplot('71'+str(i+1))
+# 	plt.plot(output[:,i])
+#
+# plt.show()
+
 
 
 
