@@ -58,7 +58,7 @@ pd.DataFrame(test_x).to_csv('temp/test_x.csv')
 pd.DataFrame(test_y).to_csv('temp/test_y.csv')
 
 model = Sequential([
-	Dense(16, input_dim=39, activation='relu'),
+	Dense(60, input_dim=39, activation='relu'),
 	# Dropout(0.5),
 	Dense(2, activation='softmax')
 ])
