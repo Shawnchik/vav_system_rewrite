@@ -253,6 +253,7 @@ class Rooms(object):
 
 		self.e = 0
 		self.es = 0
+		self.de = 0
 
 		# 房间构成
 		self.windows = [x for x in windows if x.room_id == self.room_id]
@@ -399,11 +400,11 @@ rooms = [Rooms(rooms_df.loc[i]) for i in list(rooms_df.index)]
 def pid_control(target, set_point, control0, p, i, d, e0, es, control_max=1, control_min=0, tf=1):
 	e = target - set_point
 	de = e - e0
-	if de * e <= 0:
-		de = 0
+	# if de * e <= 0:
+	# 	de = 0
 	es += e
 	control = max(min(control0 - tf * (e * p + es * i + de * d), control_max), control_min)
-	return control, e, es
+	return control, e, es, de
 	# control = max(min(control0 - tf * (e * p + es * i), control_max), control_min)
 	# return control, e
 
@@ -444,7 +445,7 @@ def room_control(room, step, season, method='flow'):
 			d = 0
 
 		# damper control by pid
-		room.g, room.e, room.es = pid_control(target, set_point, control0, p, i, d, room.e, room.es, control_max=2000, control_min=200, tf=tf)
+		room.g, room.e, room.es, room.de = pid_control(target, set_point, control0, p, i, d, room.e, room.es, control_max=2000, control_min=200, tf=tf)
 		# room.duct.damper.theta_run()
 
 # 设定开始和结束的时间
@@ -498,11 +499,14 @@ for cal_step in range(int((end - start).view('int64') / project['dt'] / 10e8)):
 	# dataset
 	dataset.extend([room.indoor_temp for room in [rooms[0]]])
 	dataset.extend([room.g for room in [rooms[0]]])
+	dataset.extend([rooms[0].e])
+	dataset.extend([rooms[0].es])
+	dataset.extend([rooms[0].de])
 	# dataset.extend([room.BRC for room in rooms])
 	# dataset.extend([room.indoor_temp_set_point_summer for room in rooms])
 	# dataset.extend([room.g_set for room in rooms])
 
-dataset = np.array(dataset).reshape((-1, 2))
+dataset = np.array(dataset).reshape((-1, 5))
 dataset = pd.DataFrame(dataset)
 dataset['time'] = output_time[:-1]
 dataset.set_index('time', inplace=True)
@@ -512,10 +516,21 @@ print(dataset)
 
 dataset = dataset.values
 plt.figure()
-plt.subplot(211)
+plt.subplot(511)
 plt.plot(dataset[:, 0])
-plt.subplot(212)
+# plt.xlim((420, 650))
+plt.subplot(512)
 plt.plot(dataset[:, 1])
+# plt.xlim((420, 650))
+plt.subplot(513)
+plt.plot(dataset[:, 2])
+# plt.xlim((420, 650))
+plt.subplot(514)
+plt.plot(dataset[:, 3])
+# plt.xlim((420, 650))
+plt.subplot(515)
+plt.plot(dataset[:, 4])
+# plt.xlim((420, 650))
 plt.show()
 
 
