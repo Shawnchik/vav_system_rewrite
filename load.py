@@ -1186,8 +1186,8 @@ def room_control(room, step, season, method='flow'):
 			else:
 				set_point = 0
 			control0 = room.duct.damper.theta
-			p = 2
-			i = 0
+			p = 1
+			i = 0.000
 			d = 100
 		else:
 			target = 0
@@ -1203,7 +1203,7 @@ def room_control(room, step, season, method='flow'):
 		room.duct.damper.theta_run()
 
 
-def duct_system_control(system, method='flow', co2_method=True, supply_air_temp_reset=True):
+def duct_system_control(system, method='flow', co2_method=False, supply_air_temp_reset=False):
 	# system_mode
 	system.mode0 = system.mode
 	system.mode = sum([room.mode for room in rooms])
@@ -1239,7 +1239,7 @@ def duct_system_control(system, method='flow', co2_method=True, supply_air_temp_
 			tf = 1
 			p_s = 0.02
 			i_s = 0
-			d_s = 0
+			d_s = 0.0
 			p_r = 0.02
 			i_r = 0
 			d_r = 0
@@ -1450,7 +1450,7 @@ plt.plot(output[:, 9:11])
 plt.subplot(715)
 plt.plot(output[:, 12:15])
 plt.subplot(716)
-plt.plot(output[:, 15:16])
+plt.plot(output[:, [15,21]])
 
 
 plt.subplot(717)
