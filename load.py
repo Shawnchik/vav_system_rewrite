@@ -747,7 +747,7 @@ class DuctSystem(object):
 		self.g_return_air = 0
 		self.g_supply_air = 0
 		self.g_mix_air = 0
-		self.set_point_pressure = 40
+		self.set_point_pressure = 20
 		self.supply_air_set_point = 15
 		self.supply_air_t = 15
 		self.water_flow = 0
@@ -766,6 +766,7 @@ class DuctSystem(object):
 		self.h_dew = 0
 		self.dh = 0
 		self.h1 = 0
+		self.last = 0
 
 	def balance(self):
 		# 管路平衡计算
@@ -1237,19 +1238,21 @@ def duct_system_control(system, method='flow', co2_method=False, supply_air_temp
 			control0_s = system.fan_s.inv
 			control0_r = system.fan_r.inv
 			tf = 1
-			p_s = 0.02
+			p_s = 0.2
 			i_s = 0
-			d_s = 0.0
+			d_s = 0
 			p_r = 0.02
 			i_r = 0
 			d_r = 0
 		elif method == 'pressure+':
 			# 变压力控制
 			vav = np.array([room.duct.damper.theta for room in rooms])
-			if all(vav > 40):
-				system.set_point_pressure *= 0.97
-			if any(vav < 10):
-				system.set_point_pressure *= 1.03
+			# if system.mode0 == 0:
+			# 	system.set_point_pressure = 20
+			if all(vav > 40) and system.fan_s.inv > 15:
+				system.set_point_pressure *= 0.93
+			if any(vav < 10) and system.fan_s.inv < 50:
+				system.set_point_pressure *= 1.07
 			# control
 			target_s = rooms[0].duct.p
 			target_r = rooms[0].duct.p
@@ -1258,10 +1261,38 @@ def duct_system_control(system, method='flow', co2_method=False, supply_air_temp
 			control0_s = system.fan_s.inv
 			control0_r = system.fan_r.inv
 			tf = 1
-			p_s = 1
+			p_s = 0.2
 			i_s = 0
 			d_s = 0
-			p_r = 0.5
+			p_r = 0.02
+			i_r = 0
+			d_r = 0
+		elif method == 'pressure++':
+			# 变压力控制
+			vav = np.array([room.duct.damper.theta for room in rooms])
+			if system.mode0 == 0:
+				system.set_point_pressure = 20
+			if system.last == 0:
+				if all(vav > 40) and system.fan_s.inv > 15:
+					system.set_point_pressure *= 0.93
+					system.last = 15
+				if any(vav < 10) and system.fan_s.inv < 50:
+					system.set_point_pressure *= 1.07
+					system.last = 15
+			else:
+				system.last -= 1
+			# control
+			target_s = rooms[0].duct.p
+			target_r = rooms[0].duct.p
+			set_point_s = system.set_point_pressure
+			set_point_r = system.set_point_pressure
+			control0_s = system.fan_s.inv
+			control0_r = system.fan_r.inv
+			tf = 1
+			p_s = 0.2
+			i_s = 0
+			d_s = 0
+			p_r = 0.02
 			i_r = 0
 			d_r = 0
 		elif method == 'pressure+pressure':
@@ -1345,8 +1376,8 @@ def duct_system_control(system, method='flow', co2_method=False, supply_air_temp
 
 
 # 设定开始和结束的时间
-start = pd.Timestamp('2001/06/20')
-end = pd.Timestamp('2001/06/30')
+start = pd.Timestamp('2001/08/28')
+end = pd.Timestamp('2001/08/30')
 output_time = pd.date_range(start, end, freq='min').values
 
 output = []
@@ -1380,7 +1411,7 @@ for cal_step in range(int((end - start).view('int64') / project['dt'] / 10e8)):
 		deltatemp2flow(room, season)
 		room_control(room, cal_step, season, method='pressure')
 
-	duct_system_control(duct_system, method='pressure')
+	duct_system_control(duct_system, method='pressure++')
 
 	# g,p distribute
 	all_balanced()
@@ -1409,6 +1440,7 @@ for cal_step in range(int((end - start).view('int64') / project['dt'] / 10e8)):
 	output.extend([room.indoor_humidity for room in rooms])
 	output.extend([duct_system.fresh_air_humidity * 1000, duct_system.mixed_air_humidity * 1000, duct_system.supply_air_humidity * 1000, outdoor_RH])
 	output.extend([room.indoor_RH for room in rooms])
+	output.extend([rooms[0].duct.p])
 
 	# dataset
 	dataset.extend([room.indoor_temp_sensor for room in rooms])
@@ -1430,7 +1462,7 @@ dataset.set_index('time', inplace=True)
 # dataset.to_csv('FDD_data_base/dataset_f1.csv')
 
 
-output = np.array(output).reshape((-1, 38))
+output = np.array(output).reshape((-1, 39))
 output = pd.DataFrame(output)
 output['time'] = output_time[:-1]
 output.set_index('time', inplace=True)
@@ -1439,22 +1471,22 @@ print(output)
 
 output = output.values
 plt.figure()
-plt.subplot(711)
+plt.subplot(511)
 plt.plot(output[:, :3])
-plt.subplot(712)
+plt.subplot(512)
 plt.plot(output[:, 3:6])
-plt.subplot(713)
+plt.subplot(513)
 plt.plot(output[:, 6:9])
-plt.subplot(714)
+plt.subplot(514)
 plt.plot(output[:, 9:11])
-plt.subplot(715)
-plt.plot(output[:, 12:15])
-plt.subplot(716)
-plt.plot(output[:, [15,21]])
+plt.subplot(515)
+plt.plot(output[:, [16,38]])
 
-
-plt.subplot(717)
-plt.plot(output[:, 17:20])
+# plt.plot(output[:, 12:15])
+# plt.subplot(716)
+# plt.plot(output[:, [15,21]])
+# plt.subplot(717)
+# plt.plot(output[:, 17:20])
 
 
 
