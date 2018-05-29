@@ -767,6 +767,7 @@ class DuctSystem(object):
 		self.dh = 0
 		self.h1 = 0
 		self.last = 0
+		self.last_2 = 0
 
 	def balance(self):
 		# 管路平衡计算
@@ -1164,18 +1165,20 @@ def room_control(room, step, season, method='flow'):
 		# target / set_point / control0
 		if method == 'flow':
 			deltatemp2flow(room, season)
-			# target = room.indoor_temp
-			# set_point = room.indoor_temp_set_point_summer if season == 'summer' else room.indoor_temp_set_point_winter
-			# tf = 1
-			# p = 0.05
-			# i = 0.0005
-			target = room.duct.g
-			set_point = room.g_set
-			tf = -1
-			p = 0.02
-			i = 0.00005
+			target = room.indoor_temp
+			set_point = room.indoor_temp_set_point_summer if season == 'summer' else room.indoor_temp_set_point_winter
 			control0 = room.duct.damper.theta
+			tf = 1
+			p = 0.2
+			i = 0
 			d = 0
+			# target = room.duct.g
+			# set_point = room.g_set
+			# control0 = room.duct.damper.theta
+			# tf = -1
+			# p = 0.005
+			# i = 0
+			# d = 0
 		elif method == 'pressure':
 			target = room.indoor_temp
 			if season == 'summer':
@@ -1204,7 +1207,7 @@ def room_control(room, step, season, method='flow'):
 		room.duct.damper.theta_run()
 
 
-def duct_system_control(system, method='flow', co2_method=False, supply_air_temp_reset=False):
+def duct_system_control(system, method='flow', co2_method=True, supply_air_temp_reset=True):
 	# system_mode
 	system.mode0 = system.mode
 	system.mode = sum([room.mode for room in rooms])
@@ -1223,11 +1226,11 @@ def duct_system_control(system, method='flow', co2_method=False, supply_air_temp
 			# print(set_point_s, set_point_r)
 			# print(control0_s, control0_r)
 			tf = 1
-			p_s = 0.005
-			i_s = 0.00001
+			p_s = 0.01
+			i_s = 0
 			d_s = 0
 			p_r = 0.01
-			i_r = 0.00001
+			i_r = 0
 			d_r = 0
 		elif method == 'pressure':
 			# 定压力控制
@@ -1359,10 +1362,15 @@ def duct_system_control(system, method='flow', co2_method=False, supply_air_temp
 		# def water_flow_control(system):
 
 		if supply_air_temp_reset:
-			if system.fan_s.inv < 18:
-				system.supply_air_set_point += 0.2
-			elif duct_system.fan_s.inv > 22:
-				system.supply_air_set_point = max(system.supply_air_set_point - 0.2, 15)
+			if system.last_2 == 0:
+				if system.fan_s.inv < 18:
+					system.supply_air_set_point = min(system.supply_air_set_point + 0.2, 26)
+					system.last_2 = 15
+				elif duct_system.fan_s.inv > 22:
+					system.supply_air_set_point = max(system.supply_air_set_point - 0.2, 15)
+					system.last_2 = 15
+			else:
+				system.last_2 -= 1
 		if system.mode0 == 0:
 			system.supply_air_set_point = 15
 		target = system.supply_air_t
@@ -1376,8 +1384,8 @@ def duct_system_control(system, method='flow', co2_method=False, supply_air_temp
 
 
 # 设定开始和结束的时间
-start = pd.Timestamp('2001/08/28')
-end = pd.Timestamp('2001/08/30')
+start = pd.Timestamp('2001/8/21')
+end = pd.Timestamp('2001/8/24')
 output_time = pd.date_range(start, end, freq='min').values
 
 output = []
@@ -1471,22 +1479,46 @@ print(output)
 
 output = output.values
 plt.figure()
-plt.subplot(511)
-plt.plot(output[:, :3])
-plt.subplot(512)
-plt.plot(output[:, 3:6])
-plt.subplot(513)
-plt.plot(output[:, 6:9])
-plt.subplot(514)
-plt.plot(output[:, 9:11])
-plt.subplot(515)
-plt.plot(output[:, [16,38]])
 
-# plt.plot(output[:, 12:15])
+'''
+plt.subplot(711)
+plt.plot(output[:, :3])
+plt.subplot(712)
+plt.plot(output[:, 3:6])
+plt.subplot(713)
+plt.plot(output[:, 6:9])
+plt.subplot(714)
+plt.plot(output[:, 9:11])
+plt.subplot(715)
+plt.plot(output[:, [16,38]])
+plt.subplot(716)
+plt.plot(output[:, 12:15])
+plt.subplot(717)
+plt.plot(output[:, 15])
+'''
 # plt.subplot(716)
 # plt.plot(output[:, [15,21]])
 # plt.subplot(717)
 # plt.plot(output[:, 17:20])
+
+plt.subplot(711)
+plt.plot(output[:, :3])
+plt.subplot(712)
+plt.plot(output[:, 6:9])
+plt.subplot(713)
+plt.plot(output[:, 9:11])
+plt.subplot(714)
+plt.plot(output[:, 12:15])
+plt.subplot(715)
+plt.plot(output[:, 15])
+plt.subplot(716)
+plt.plot(output[:, [20,21,27]])
+plt.subplot(717)
+plt.plot(output[:, [25,26]])
+
+
+
+
 
 
 
