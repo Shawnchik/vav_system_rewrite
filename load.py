@@ -1381,11 +1381,18 @@ def duct_system_control(system, method='flow', co2_method=True, supply_air_temp_
 		d = 0
 		system.water_flow, system.water_flow_e, system.water_flow_es = pid_control(target, system.supply_air_set_point, control0, p, i, d, system.water_flow_e, system.water_flow_es, control_max=10, control_min=0, tf=tf)
 
-
+energy_sum = 0
+def energy_cal(system):
+	fan_s_efficient = -(system.fan_s.inv ** 2) / 20000 + system.fan_s.inv / 10 + 35
+	fan_r_efficient = fan_s_efficient
+	energy_fan_s = system.fan_s.p * system.g_supply_air / 3600 / fan_s_efficient
+	energy_fan_r = system.fan_r.p * system.g_return_air / 3600 / fan_r_efficient
+	energy_water = system.water_flow * 4.2 * (HE_ahu.t_water_out - 7) * 1000 / 3.6 / 5  # cop=5
+	return energy_fan_s + energy_fan_r + energy_water
 
 # 设定开始和结束的时间
-start = pd.Timestamp('2001/8/21')
-end = pd.Timestamp('2001/8/24')
+start = pd.Timestamp('2001/8/1')
+end = pd.Timestamp('2001/9/1')
 output_time = pd.date_range(start, end, freq='min').values
 
 output = []
@@ -1433,6 +1440,10 @@ for cal_step in range(int((end - start).view('int64') / project['dt'] / 10e8)):
 	for room in rooms:
 		room.after_cal(cal_step, season)
 
+	# energy
+	energy = energy_cal(duct_system)
+	energy_sum += energy
+
 	# outdoor
 	outdoor_RH = t_x2phi(outdoor_temp[cal_step], outdoor_humidity[cal_step] / 1000)
 
@@ -1449,6 +1460,7 @@ for cal_step in range(int((end - start).view('int64') / project['dt'] / 10e8)):
 	output.extend([duct_system.fresh_air_humidity * 1000, duct_system.mixed_air_humidity * 1000, duct_system.supply_air_humidity * 1000, outdoor_RH])
 	output.extend([room.indoor_RH for room in rooms])
 	output.extend([rooms[0].duct.p])
+	output.extend([energy/1000])
 
 	# dataset
 	dataset.extend([room.indoor_temp_sensor for room in rooms])
@@ -1470,11 +1482,12 @@ dataset.set_index('time', inplace=True)
 # dataset.to_csv('FDD_data_base/dataset_f1.csv')
 
 
-output = np.array(output).reshape((-1, 39))
+output = np.array(output).reshape((-1, 40))
 output = pd.DataFrame(output)
 output['time'] = output_time[:-1]
 output.set_index('time', inplace=True)
 print(output)
+print(energy_sum/60)
 # output.to_csv('FDD_data_base/f0.csv')
 
 output = output.values
@@ -1514,7 +1527,7 @@ plt.plot(output[:, 15])
 plt.subplot(716)
 plt.plot(output[:, [20,21,27]])
 plt.subplot(717)
-plt.plot(output[:, [25,26]])
+plt.plot(output[:, [25,26,39]])
 
 
 
