@@ -290,7 +290,7 @@ class Rooms(object):
 		self.indoor_temp = 26
 		self.indoor_temp_sensor = self.indoor_temp
 		self.indoor_humidity = 0
-		self.indoor_RH = 0
+		self.indoor_RH = 50
 		self.ground_temp = 10
 		for x in self.walls:
 			x.tn = np.ones(np.array(x.ul).shape) * self.indoor_temp
@@ -409,7 +409,7 @@ class Rooms(object):
 	def after_cal(self, step, season):
 		if self.mode:
 			# capacity(summer)
-			self.capacity = self.duct.g * (26 - duct_system.supply_air_t) * 1.005 * 1.2 / 3600
+			self.capacity = self.duct.g * (self.indoor_temp - duct_system.supply_air_t) * 1.005 * 1.2 / 3600
 			# capacity(winter)
 			# !!!!!!!!!!
 			# indoor_temp
@@ -793,6 +793,7 @@ class DuctSystem(object):
 		self.duct_return_air.g = self.g_return_air
 		self.duct_supply_air.g = self.g_supply_air
 		self.duct_mix_air.g = self.g_mix_air
+		f2.p = self.fan_s.predict(self.g_supply_air, self.fan_s.inv)
 		# print(self.g_return_air, self.g_supply_air, self.g_mix_air)
 
 	def balance_check(self):
@@ -834,6 +835,8 @@ class DuctSystem(object):
 		ex.t_water_in = 7
 		ex.flow_air = self.g_supply_air
 		ex.epsilon_cal(self.water_flow)
+		# F10
+		ex.epsilon *= 0.8
 		ex.epsilon_to_temp()
 		ex.q_to_dh()
 		self.dh = ex.dh
@@ -1034,6 +1037,7 @@ class HeatExchanger(object):
 		# print(self.dh)
 
 
+
 # HVAC设备构成
 vav1 = Damper(0.45, theta0=40)
 vav2 = Damper(0.4, theta0=40)
@@ -1048,6 +1052,19 @@ duct_2 = Duct(1819, 2.5, 0.3+0.1+0.4+0.23+1.2+0.9, damper=vav2)
 duct_12 = Duct(2062 + 1819, 7.5, 0.05+0.1, a=0.6)
 duct_3 = Duct(2062, 2.5, 0.3+0.1+0.4+0.23+1.2+0.9, damper=vav3)
 duct_123 = Duct(5427, 4.3, 3.6+0.23, a=0.6)
+
+
+# F6
+class DuctFault(Duct):
+	def g_cal(self, g):
+		self.g = g * 0.9
+		self.p = self.s * (self.g / 3600) ** 2
+
+# duct_1 = DuctFault(2062, 10, 0.05 + 0.1 + 0.23 + 0.4 + 0.9 + 1.2 + 0.23, damper=vav1)
+# duct_2 = DuctFault(1819, 2.5, 0.3+0.1+0.4+0.23+1.2+0.9, damper=vav2)
+# duct_3 = DuctFault(2062, 2.5, 0.3+0.1+0.4+0.23+1.2+0.9, damper=vav3)
+
+
 # 回风管段
 duct_return_air = Duct(5427, 1.75, 0.5+0.24, a=0.7)
 duct_exhaust_air = Duct(5427, 0.95, 3.7+0.9+0.4+0.05, damper=exhaust_air_damper, a=0.7)
@@ -1125,7 +1142,7 @@ def pid_control(target, set_point, control0, p, i, d, e0, es, control_max=1, con
 
 
 def deltatemp2flow(room, season):
-	room.indoor_temp_sensor = room.indoor_temp
+	# room.indoor_temp_sensor = room.indoor_temp
 	# deltatemp
 	if season == 'summer':
 		deltatemp = float(room.indoor_temp_sensor - room.indoor_temp_set_point_summer)
@@ -1180,7 +1197,7 @@ def room_control(room, step, season, method='flow'):
 			# i = 0
 			# d = 0
 		elif method == 'pressure':
-			target = room.indoor_temp
+			target = room.indoor_temp_sensor
 			if season == 'summer':
 				set_point = room.indoor_temp_set_point_summer
 				tf = 1
@@ -1355,6 +1372,8 @@ def duct_system_control(system, method='flow', co2_method=True, supply_air_temp_
 			i = 0
 			d = 0
 			system.duct_mix_air.damper.theta, system.duct_mix_air.damper.e, system.duct_mix_air.es = pid_control(target, set_point, control0, p, i, d, system.duct_mix_air.damper.e, system.duct_mix_air.damper.es, control_max=70, control_min=0, tf=tf)
+			# F8
+			# system.duct_mix_air.damper.theta = 0
 			system.duct_mix_air.damper.theta_run()
 
 		# 水流量控制
@@ -1390,6 +1409,8 @@ def energy_cal(system):
 	energy_water = system.water_flow * 4.2 * (HE_ahu.t_water_out - 7) * 1000 / 3.6 / 5  # cop=5
 	return energy_fan_s + energy_fan_r + energy_water
 
+
+
 # 设定开始和结束的时间
 start = pd.Timestamp('2001/8/1')
 end = pd.Timestamp('2001/9/1')
@@ -1422,9 +1443,29 @@ for cal_step in range(int((end - start).view('int64') / project['dt'] / 10e8)):
 		room.room_co2(cal_step)
 
 	# control
-	for room in rooms:
-		deltatemp2flow(room, season)
-		room_control(room, cal_step, season, method='pressure')
+	# for room in rooms:
+	# 	deltatemp2flow(room, season)
+	# 	room_control(room, cal_step, season, method='pressure')
+
+	# F5，7
+	# rooms[2].indoor_temp_set_point_summer = 15
+
+	# F1, 2
+	# control
+	rooms[0].indoor_temp_sensor = rooms[0].indoor_temp
+	# deltatemp2flow(rooms[0], season)
+	room_control(rooms[0], cal_step, season, method='pressure')
+
+	rooms[1].indoor_temp_sensor = rooms[1].indoor_temp
+	# deltatemp2flow(rooms[1], season)
+	room_control(rooms[1], cal_step, season, method='pressure')
+
+	rooms[2].indoor_temp_sensor = rooms[2].indoor_temp
+	# deltatemp2flow(rooms[2], season)
+	room_control(rooms[2], cal_step, season, method='pressure')
+
+	# F3, 4
+	# rooms[2].duct.damper.theta = 70
 
 	duct_system_control(duct_system, method='pressure++')
 
@@ -1447,8 +1488,9 @@ for cal_step in range(int((end - start).view('int64') / project['dt'] / 10e8)):
 	# outdoor
 	outdoor_RH = t_x2phi(outdoor_temp[cal_step], outdoor_humidity[cal_step] / 1000)
 
+	'''
 	# plot
-	output.extend([room.indoor_temp for room in rooms])
+	output.extend([room.indoor_temp_sensor for room in rooms])
 	output.extend([room.capacity for room in rooms])
 	output.extend([vav1.theta, vav2.theta, vav3.theta, f1.inv, f2.inv, outdoor_temp[cal_step]])
 	output.extend([room.co2_p for room in rooms])
@@ -1461,6 +1503,7 @@ for cal_step in range(int((end - start).view('int64') / project['dt'] / 10e8)):
 	output.extend([room.indoor_RH for room in rooms])
 	output.extend([rooms[0].duct.p])
 	output.extend([energy/1000])
+	'''
 
 	# dataset
 	dataset.extend([room.indoor_temp_sensor for room in rooms])
@@ -1469,29 +1512,56 @@ for cal_step in range(int((end - start).view('int64') / project['dt'] / 10e8)):
 	dataset.extend([room.co2_p for room in rooms])
 	dataset.extend([room.indoor_RH for room in rooms])
 	dataset.extend([room.indoor_temp_set_point_summer for room in rooms])
-	dataset.extend([room.g_set for room in rooms])
+	# dataset.extend([room.g_set for room in rooms])
 
-	dataset.extend([f2.inv, f1.inv, duct_system.supply_air_t, duct_system.mixed_air_temp, duct_system.duct_mix_air.damper.theta])
-	dataset.extend([duct_system.supply_air_set_point, HE_ahu.t_water_out, duct_system.water_flow, duct_supply_air.p, outdoor_temp[cal_step], outdoor_RH])
+	dataset.extend([duct_system.set_point_pressure, rooms[0].duct.p, f2.inv, f1.inv, duct_system.supply_air_t, duct_system.mixed_air_temp, duct_system.duct_mix_air.damper.theta])
+	dataset.extend([duct_system.supply_air_set_point, HE_ahu.t_water_out, duct_system.water_flow, f2.p/10, outdoor_temp[cal_step], outdoor_RH, energy/1000])
 
 
 dataset = np.array(dataset).reshape((-1, 32))
 dataset = pd.DataFrame(dataset)
 dataset['time'] = output_time[:-1]
 dataset.set_index('time', inplace=True)
-# dataset.to_csv('FDD_data_base/dataset_f1.csv')
+dataset.to_csv('FDD_data_base_new/dataset_08_f10_r0.csv')
+print((energy_sum/60000))
+
+dataset = dataset.values
+plt.figure()
+plt.subplot(911)
+plt.plot(dataset[:, [15, 16, 17, 0, 1, 2, 29]])
+plt.subplot(912)
+plt.plot(dataset[:, [3, 4, 5]])
+plt.subplot(913)
+plt.plot(dataset[:, [6, 7, 8]])
+plt.subplot(914)
+plt.plot(dataset[:, [20, 21]])
+plt.subplot(915)
+plt.plot(dataset[:, [9, 10, 11]])
+plt.subplot(916)
+plt.plot(dataset[:, [23, 24]])
+plt.subplot(917)
+plt.plot(dataset[:, [18, 19, 28]])
+plt.subplot(918)
+plt.plot(dataset[:, [22, 25, 26]])
+plt.subplot(919)
+plt.plot(dataset[:, [27, 31]])
 
 
+plt.subplots_adjust(hspace=0)
+plt.show()
+
+'''
 output = np.array(output).reshape((-1, 40))
 output = pd.DataFrame(output)
 output['time'] = output_time[:-1]
 output.set_index('time', inplace=True)
 print(output)
-print(energy_sum/60)
+
 # output.to_csv('FDD_data_base/f0.csv')
 
 output = output.values
 plt.figure()
+'''
 
 '''
 plt.subplot(711)
@@ -1513,7 +1583,7 @@ plt.plot(output[:, 15])
 # plt.plot(output[:, [15,21]])
 # plt.subplot(717)
 # plt.plot(output[:, 17:20])
-
+'''
 plt.subplot(711)
 plt.plot(output[:, :3])
 plt.subplot(712)
@@ -1550,7 +1620,7 @@ plt.show()
 #
 # plt.show()
 
-
+'''
 
 
 
