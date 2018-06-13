@@ -144,14 +144,58 @@ pd.DataFrame(train).to_csv('row_dataset_new/train_0203+01.csv')
 
 # 单个房间
 
-
-
-
-
-
-
-
-
+'''
+# train_tr_r1_F0F9
+# 选7条(第一天)
+train0 = pd.read_csv('row_dataset_new/train.csv').values[:, 1:]
+train_tr_r1_f1f7 = []
+i = 1
+for data in train0:
+	if data[-1] == 1 and data[-2] == i:
+		train_tr_r1_f1f7.append(data)
+		i += 1
+	if i == 8:
+		break
+# 删r2r3
+train_tr_r1_f1f7_x = np.array(train_tr_r1_f1f7)[:, :512].reshape((-1, 16, 32))
+train_tr_r = train_tr_r1_f1f7_x[:, :, :18].reshape((-1, 16, 6, 3)).transpose((0, 1, 3, 2)).reshape((-1, 16, 18))
+train_tr_r1_f1f7_x = np.concatenate((train_tr_r[:, :, :6], train_tr_r1_f1f7_x[:, :, 18:]), axis=2)
+train_tr_r1_f1f7 = np.concatenate((train_tr_r1_f1f7_x.reshape((-1, 320)), np.array(train_tr_r1_f1f7)[:, 512:]), axis=1)
+pd.DataFrame(train_tr_r1_f1f7).to_csv('row_dataset_new/train_tr_r1_f1f7.csv')
+'''
+'''
+# train_tr_r2
+# 选r2
+train0 = pd.read_csv('row_dataset_new/train.csv').values[:, 1:]
+train_r2 = train0[[x[-1] == 2 or x[-1] == 0 for x in train0]]
+# 删r1r3
+train_r2_x = np.array(train_r2)[:, :512].reshape((-1, 16, 32))
+train_r = train_r2_x[:, :, :18].reshape((-1, 16, 6, 3)).transpose((0, 1, 3, 2)).reshape((-1, 16, 18))
+train_r2_x = np.concatenate((train_r[:, :, 6:12], train_r2_x[:, :, 18:]), axis=2)
+train_r2 = np.concatenate((train_r2_x.reshape((-1, 320)), np.array(train_r2)[:, 512:]), axis=1)
+pd.DataFrame(train_r2).to_csv('row_dataset_new/train_tr_r2.csv')
+'''
+'''
+# test_tr_r1
+# 删r2r3
+test0 = pd.read_csv('row_dataset_new/test.csv').values[:, 1:]
+test_x = np.array(test0)[:, :512].reshape((-1, 16, 32))
+test = test_x[:, :, :18].reshape((-1, 16, 6, 3)).transpose((0, 1, 3, 2)).reshape((-1, 16, 18))
+test_x = np.concatenate((test[:, :, :6], test_x[:, :, 18:]), axis=2)
+test = np.concatenate((test_x.reshape((-1, 320)), np.array(test0)[:, 512:]), axis=1)
+pd.DataFrame(test).to_csv('row_dataset_new/test_tr_r1.csv')
+'''
+'''
+# train_tr_r1完整
+train0 = pd.read_csv('row_dataset_new/train.csv').values[:, 1:]
+train_r1 = train0[[x[-1] == 1 or x[-1] == 0 for x in train0]]
+# 删r1r3
+train_r1_x = np.array(train_r1)[:, :512].reshape((-1, 16, 32))
+train_r = train_r1_x[:, :, :18].reshape((-1, 16, 6, 3)).transpose((0, 1, 3, 2)).reshape((-1, 16, 18))
+train_r1_x = np.concatenate((train_r[:, :, :6], train_r1_x[:, :, 18:]), axis=2)
+train_r1 = np.concatenate((train_r1_x.reshape((-1, 320)), np.array(train_r1)[:, 512:]), axis=1)
+pd.DataFrame(train_r1).to_csv('row_dataset_new/train_tr_r1.csv')
+'''
 
 
 

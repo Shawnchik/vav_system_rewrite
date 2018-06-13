@@ -10,20 +10,28 @@ import pandas as pd
 
 # train = pd.read_csv('row_dataset_new/train.csv').values[:, 1:]
 # train = pd.read_csv('row_dataset_new/train_0203.csv').values[:, 1:]
-train = pd.read_csv('row_dataset_new/train_0203+01.csv').values[:, 1:]
-test = pd.read_csv('row_dataset_new/test.csv').values[:, 1:]
+# train = pd.read_csv('row_dataset_new/train_0203+01.csv').values[:, 1:]
+train = pd.read_csv('row_dataset_new/train_tr_r1.csv').values[:, 1:]
+test = pd.read_csv('row_dataset_new/test_tr_r1.csv').values[:, 1:]
 
-train_x = train[:, :512]
-train_y = train[:, 512:]
-test_x = test[:, :512]
-test_y = test[:, 512:]
+# three rooms
+# train_x = train[:, :512]
+# train_y = train[:, 512:]
+# test_x = test[:, :512]
+# test_y = test[:, 512:]
+
+# single room
+train_x = train[:, :320]
+train_y = train[:, 320:]
+test_x = test[:, :320]
+test_y = test[:, 320:]
 
 train_y_1 = np_utils.to_categorical(train_y[:, 0], num_classes=10)
 train_y_2 = np_utils.to_categorical(train_y[:, 1], num_classes=4)
 test_y_1 = np_utils.to_categorical(test_y[:, 0], num_classes=10)
 test_y_2 = np_utils.to_categorical(test_y[:, 1], num_classes=4)
 
-mode = 'CNN'
+mode = 'CNN+single'
 
 if mode == 'CNN':
 	# CNN
@@ -133,8 +141,28 @@ elif mode == 'CNN+room':
 
 	model = Model(inputs=input_layer, outputs=dense_2)
 
-elif mode == 'single_room':
-	pass
+elif mode == 'CNN+single':
+
+	# CNN+single
+	train_x = train_x.reshape((-1, 16, 20, 1))
+	test_x = test_x.reshape((-1, 16, 20, 1))
+
+	model = Sequential([
+		Conv2D(32, (3, 3), activation='relu', input_shape=(16, 20, 1), padding='same'),
+		Conv2D(32, (3, 3), activation='relu', padding='same'),
+		MaxPooling2D(pool_size=(4, 1)),
+		Dropout(0.25),
+
+		Conv2D(32, (3, 6), activation='relu', padding='same'),
+		Conv2D(32, (3, 6), activation='relu', padding='same'),
+		MaxPooling2D(pool_size=(4, 1)),
+		Dropout(0.25),
+
+		Flatten(),
+		Dense(256, activation='relu'),
+		Dropout(0.5),
+		Dense(10, activation='softmax')
+	])
 
 print(model.summary())
 
@@ -144,11 +172,11 @@ for i in range(20):
 	print(i)
 	model.compile(loss='categorical_crossentropy', optimizer=RMSprop(lr=0.001), metrics=['accuracy'])
 	model.fit(x=train_x, y=train_y_1, epochs=5, shuffle=True, verbose=1)
-	loss = model.evaluate(x=test_x, y=test_y_1)
+	_, loss = model.evaluate(x=test_x, y=test_y_1)
 	print(loss)
 	los.append(loss)
 
-print(los)
+print(np.array(los))
 pred = model.predict(x=test_x)
 pd.DataFrame(pred).to_csv('temp_new/pred.csv')
 
