@@ -83,13 +83,14 @@ pd.DataFrame(std_test).to_csv('row_dataset_new/09_std_8-24.csv')
 '''
 
 # 16合1
+'''
 train = pd.read_csv('row_dataset_new/08_std_8-24.csv').values[:, 1:]
 test = pd.read_csv('row_dataset_new/09_std_8-24.csv').values[:, 1:]
 
 # print(test.shape)
 train_n = np.array(train[:, :32]).reshape(-1, 16*32)
 test_n = np.array(test[:, :32]).reshape(-1, 16*32)
-
+'''
 # plot test
 '''
 test_show = np.array(test[:, :32]).reshape(10, 10, 16, 32).transpose((1, 0, 2, 3))
@@ -103,7 +104,7 @@ for i in range(100):
 plt.subplots_adjust(hspace=0)
 plt.show()
 '''
-
+'''
 index = ([True] + [False] * 15) * 31 * 24
 train_n = np.concatenate((train_n, train[:, 32:][index]), axis=1)
 
@@ -112,10 +113,36 @@ test_n = np.concatenate((test_n, test[:, 32:][index]), axis=1)
 
 pd.DataFrame(train_n).to_csv('row_dataset_new/train.csv')
 pd.DataFrame(test_n).to_csv('row_dataset_new/test.csv')
+'''
 
+# 学习集只有房间2和3
+'''
+train = pd.read_csv('row_dataset_new/train.csv').values[:, 1:]
+train = train[train[:, -1] != 1]
+pd.DataFrame(train).to_csv('row_dataset_new/train_0203.csv')
+'''
 
+# 学习集用03补01
+'''
+train0 = pd.read_csv('row_dataset_new/train_0203.csv').values[:, 1:]
+train = train0[train0[:, -1] == 3]
+train_x = train[:, :-2].reshape((-1, 16, 32))
 
+train_x_room = train_x[:, :, :18].reshape((-1, 16, 6, 3)).transpose((0, 1, 3, 2)).reshape((-1, 16, 18))
+train_x = np.concatenate((train_x_room, train_x[:, :, 18:]), axis=2)
 
+train_x_new = np.concatenate((train_x[:, :, 12:18], train_x[:, :, 6:12], train_x[:, :, :6], train_x[:, :, 18:]), axis=2)
+
+train_x_new_room = train_x_new[:, :, :18].reshape((-1, 16, 3, 6)).transpose((0, 1, 3, 2)).reshape((-1, 16, 18))
+train_x_new = np.concatenate((train_x_new_room, train_x_new[:, :, 18:]), axis=2)
+
+train_new = np.concatenate((train_x_new.reshape((-1, 512)), train[:, -2:]), axis=1)
+train_new[:, -1] = 1
+train = np.concatenate((train0, train_new), axis=0)
+pd.DataFrame(train).to_csv('row_dataset_new/train_0203+01.csv')
+'''
+
+# 单个房间
 
 
 
