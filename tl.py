@@ -60,10 +60,11 @@ dropout_3 = Dropout(0.25)(maxpool_3)
 
 flatten_1 = Flatten()(dropout_3)
 dense_1 = Dense(256, activation='relu')(flatten_1)
+# dense_2 = Dense(32, activation='relu')(dense_1)
 dropout_4 = Dropout(0.5)(dense_1)
-dense_2 = Dense(10, activation='softmax')(dropout_4)
+dense_3 = Dense(10, activation='softmax')(dropout_4)
 
-model = Model(inputs=input_layer, outputs=dense_2)
+model = Model(inputs=input_layer, outputs=dense_3)
 
 print(model.summary())
 
@@ -76,23 +77,32 @@ print(loss)
 
 pred = model.predict(x=test_x)
 
-dense_3 = Dense(256, activation='relu')(flatten_1)
-dropout_5 = Dropout(0.5)(dense_3)
-dense_4 = Dense(10, activation='softmax')(dropout_5)
 
-model2 =Model(inputs=input_layer, outputs=dense_4)
+
+# dense_4 = Dense(32, activation='relu')(dense_1)
+# dropout_5 = Dropout(0.5)(dense_4)
+dense_5 = Dense(10, activation='softmax')(dropout_4)
+model2 =Model(inputs=input_layer, outputs=dense_5)
+
+# input_layer2 = Input(shape=(16, 20, 1))
+# con_5 = Conv2D(32, (3, 3), activation='relu', padding='same')(input_layer2)
+# con_6 = Conv2D(32, (3, 3), activation='relu', padding='same')(con_5)
+# maxpool_4 = MaxPooling2D(pool_size=(4, 1))(con_6)
+# dropout_1 = Dropout(0.25)(maxpool_4)
+# model2 = Model(inputs=input_layer2, outputs=dense_3)
+
 
 for layer in model.layers:
 	layer.trainable = False
 
-print(model.summary())
+print(model2.summary())
 
-model.compile(loss='categorical_crossentropy', optimizer=RMSprop(lr=0.01), metrics=['accuracy'])
-model.fit(x=train_1_x, y=train_1_y_1, epochs=100, shuffle=True, verbose=0)
-__, loss = model.evaluate(x=test_x, y=test_y_1)
+model2.compile(loss='categorical_crossentropy', optimizer=RMSprop(lr=0.001), metrics=['accuracy'])
+model2.fit(x=train_1_x, y=train_1_y_1, epochs=1000, shuffle=True, verbose=0)
+__, loss = model2.evaluate(x=test_x, y=test_y_1)
 print(loss)
 
-pred1 = model.predict(x=test_x)
+pred1 = model2.predict(x=test_x)
 
 pd.DataFrame(pred).to_csv('temp_new/pred.csv')
 pd.DataFrame(pred1).to_csv('temp_new/pred1.csv')
