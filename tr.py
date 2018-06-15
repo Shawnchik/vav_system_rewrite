@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 
 train_0 = pd.read_csv('row_dataset_new/train_tr_r2.csv').values[:, 1:]  # 源域 异分布
-train_1 = pd.read_csv('row_dataset_new/train_tr_r1_30f0.csv').values[:, 1:]  # 目标域 同分布
+train_1 = pd.read_csv('row_dataset_new/train_tr_r1_f1f7.csv').values[:, 1:]  # 目标域 同分布
 test = pd.read_csv('row_dataset_new/test_tr_r1.csv').values[:, 1:]
 
 train_0_x = train_0[:, :320]

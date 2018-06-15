@@ -836,7 +836,7 @@ class DuctSystem(object):
 		ex.flow_air = self.g_supply_air
 		ex.epsilon_cal(self.water_flow)
 		# F10
-		ex.epsilon *= 0.8
+		# ex.epsilon *= 0.8
 		ex.epsilon_to_temp()
 		ex.q_to_dh()
 		self.dh = ex.dh
