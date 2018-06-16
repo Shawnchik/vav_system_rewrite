@@ -11,7 +11,7 @@ import pandas as pd
 # train = pd.read_csv('row_dataset_new/train.csv').values[:, 1:]
 # train = pd.read_csv('row_dataset_new/train_0203.csv').values[:, 1:]
 # train = pd.read_csv('row_dataset_new/train_0203+01.csv').values[:, 1:]
-train = pd.read_csv('row_dataset_new/train_0203.csv').values[:, 1:]
+train = pd.read_csv('row_dataset_new/train_0203+01.csv').values[:, 1:]
 test = pd.read_csv('row_dataset_new/test.csv').values[:, 1:]
 
 # three rooms
