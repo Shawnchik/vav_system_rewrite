@@ -11,27 +11,27 @@ import pandas as pd
 # train = pd.read_csv('row_dataset_new/train.csv').values[:, 1:]
 # train = pd.read_csv('row_dataset_new/train_0203.csv').values[:, 1:]
 # train = pd.read_csv('row_dataset_new/train_0203+01.csv').values[:, 1:]
-train = pd.read_csv('row_dataset_new/train_tr_r2+r1_f1f7.csv').values[:, 1:]
-test = pd.read_csv('row_dataset_new/test_tr_r1.csv').values[:, 1:]
+train = pd.read_csv('row_dataset_new/train_0203.csv').values[:, 1:]
+test = pd.read_csv('row_dataset_new/test.csv').values[:, 1:]
 
 # three rooms
-# train_x = train[:, :512]
-# train_y = train[:, 512:]
-# test_x = test[:, :512]
-# test_y = test[:, 512:]
+train_x = train[:, :512]
+train_y = train[:, 512:]
+test_x = test[:, :512]
+test_y = test[:, 512:]
 
 # single room
-train_x = train[:, :320]
-train_y = train[:, 320:]
-test_x = test[:, :320]
-test_y = test[:, 320:]
+# train_x = train[:, :320]
+# train_y = train[:, 320:]
+# test_x = test[:, :320]
+# test_y = test[:, 320:]
 
 train_y_1 = np_utils.to_categorical(train_y[:, 0], num_classes=10)
 train_y_2 = np_utils.to_categorical(train_y[:, 1], num_classes=4)
 test_y_1 = np_utils.to_categorical(test_y[:, 0], num_classes=10)
 test_y_2 = np_utils.to_categorical(test_y[:, 1], num_classes=4)
 
-mode = 'CNN+single'
+mode = 'CNN'
 
 if mode == 'CNN':
 	# CNN
@@ -48,9 +48,17 @@ if mode == 'CNN':
 		MaxPooling2D(pool_size=(4, 2)),
 		Dropout(0.25),
 
+		Conv2D(32, (3, 3), activation='relu', padding='same'),
+		Conv2D(32, (3, 3), activation='relu', padding='same'),
+		Dropout(0.25),
+
+		Conv2D(32, (3, 3), activation='relu', padding='same'),
+		Conv2D(32, (3, 3), activation='relu', padding='same'),
+		Dropout(0.25),
+
 		Flatten(),
-		Dense(256, activation='relu'),
-		Dropout(0.5),
+		# Dense(256, activation='relu'),
+		# Dropout(0.5),
 		Dense(10, activation='softmax')
 	])
 
@@ -166,6 +174,8 @@ elif mode == 'CNN+single':
 
 print(model.summary())
 
+
+
 los = []
 
 for i in range(20):
@@ -176,9 +186,14 @@ for i in range(20):
 	print(loss)
 	los.append(loss)
 
-print(np.array(los))
+print(list(np.array(los)))
 pred = model.predict(x=test_x)
-pd.DataFrame(pred).to_csv('temp_new/pred.csv')
+
+pred = np.array(pred).T
+plt.imshow(-pred, 'gray')
+plt.show()
+
+# pd.DataFrame(pred).to_csv('temp_new/pred.csv')
 
 
 
