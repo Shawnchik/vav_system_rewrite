@@ -11,27 +11,27 @@ import pandas as pd
 # train = pd.read_csv('row_dataset_new/train.csv').values[:, 1:]
 # train = pd.read_csv('row_dataset_new/train_0203.csv').values[:, 1:]
 # train = pd.read_csv('row_dataset_new/train_0203+01.csv').values[:, 1:]
-train = pd.read_csv('row_dataset_new/train_0203+01.csv').values[:, 1:]
-test = pd.read_csv('row_dataset_new/test.csv').values[:, 1:]
+train = pd.read_csv('row_dataset_new/train_tr_new_little.csv').values[:, 1:]
+test = pd.read_csv('row_dataset_new/test_tr_new.csv').values[:, 1:]
 
 # three rooms
-train_x = train[:, :512]
-train_y = train[:, 512:]
-test_x = test[:, :512]
-test_y = test[:, 512:]
+# train_x = train[:, :512]
+# train_y = train[:, 512:]
+# test_x = test[:, :512]
+# test_y = test[:, 512:]
 
 # single room
-# train_x = train[:, :320]
-# train_y = train[:, 320:]
-# test_x = test[:, :320]
-# test_y = test[:, 320:]
+train_x = train[:, :320]
+train_y = train[:, 320:]
+test_x = test[:, :320]
+test_y = test[:, 320:]
 
-train_y_1 = np_utils.to_categorical(train_y[:, 0], num_classes=10)
+train_y_1 = np_utils.to_categorical(train_y[:, 0], num_classes=5)
 train_y_2 = np_utils.to_categorical(train_y[:, 1], num_classes=4)
-test_y_1 = np_utils.to_categorical(test_y[:, 0], num_classes=10)
+test_y_1 = np_utils.to_categorical(test_y[:, 0], num_classes=5)
 test_y_2 = np_utils.to_categorical(test_y[:, 1], num_classes=4)
 
-mode = 'CNN'
+mode = 'CNN_room_simple'
 
 if mode == 'CNN':
 	# CNN
@@ -61,6 +61,28 @@ if mode == 'CNN':
 		# Dropout(0.5),
 		Dense(10, activation='softmax')
 	])
+elif mode == 'CNN_room_simple':
+	# CNN+single
+	train_x = train_x.reshape((-1, 16, 20, 1))
+	test_x = test_x.reshape((-1, 16, 20, 1))
+
+	model = Sequential([
+		Conv2D(32, (3, 3), activation='relu', input_shape=(16, 20, 1), padding='same'),
+		Conv2D(32, (3, 3), activation='relu', padding='same'),
+		MaxPooling2D(pool_size=(4, 2)),
+		Dropout(0.25),
+
+		Conv2D(32, (3, 3), activation='relu', padding='same'),
+		Conv2D(32, (3, 3), activation='relu', padding='same'),
+		MaxPooling2D(pool_size=(4, 2)),
+		Dropout(0.25),
+
+		Flatten(),
+		# Dense(256, activation='relu'),
+		# Dropout(0.5),
+		Dense(5, activation='softmax')
+	])
+
 
 elif mode == 'BPNN':
 	# BP

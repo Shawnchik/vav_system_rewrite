@@ -1421,6 +1421,8 @@ dataset = []
 
 stepdelta = int((start - pd.Timestamp('2001/01/01')).view('int64') / project['dt'] / 10e8)
 
+# random_fault = np.random.uniform(-4, -2)
+
 # run
 for cal_step in range(int((end - start).view('int64') / project['dt'] / 10e8)):
 	# season
@@ -1447,11 +1449,16 @@ for cal_step in range(int((end - start).view('int64') / project['dt'] / 10e8)):
 	# 	deltatemp2flow(room, season)
 	# 	room_control(room, cal_step, season, method='pressure')
 
+	# fault
+	if cal_step % 1440 == 0:
+		random_fault = np.random.uniform(0, 70)
+
 	# F5，7
-	# rooms[2].indoor_temp_set_point_summer = 15
+	# rooms[0].indoor_temp_set_point_summer = random_fault
 
 	# F1, 2
 	# control
+
 	rooms[0].indoor_temp_sensor = rooms[0].indoor_temp
 	# deltatemp2flow(rooms[0], season)
 	room_control(rooms[0], cal_step, season, method='pressure')
@@ -1465,7 +1472,7 @@ for cal_step in range(int((end - start).view('int64') / project['dt'] / 10e8)):
 	room_control(rooms[2], cal_step, season, method='pressure')
 
 	# F3, 4
-	# rooms[2].duct.damper.theta = 70
+	rooms[0].duct.damper.theta = random_fault
 
 	duct_system_control(duct_system, method='pressure++')
 
@@ -1522,7 +1529,7 @@ dataset = np.array(dataset).reshape((-1, 32))
 dataset = pd.DataFrame(dataset)
 dataset['time'] = output_time[:-1]
 dataset.set_index('time', inplace=True)
-dataset.to_csv('FDD_data_base_new/dataset_08_f10_r0.csv')
+# dataset.to_csv('FDD_data_base_new/new_fault/dataset_09_f4_r1.csv')
 print((energy_sum/60000))
 
 dataset = dataset.values
