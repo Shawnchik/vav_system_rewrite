@@ -92,6 +92,7 @@ for t in range(N):
 	print('e_t', e_t)
 
 	# e_t 小于0.5？
+	e_t = min(e_t, 0.5)
 
 	beta_t = e_t/(1-e_t)
 
