@@ -3,7 +3,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from scipy.optimize import fsolve
-#ddd
+#dd
 # input
 # read_weather
 weather_df = pd.read_excel('input/WeatherData.xlsx', header=[6]).drop([0])
